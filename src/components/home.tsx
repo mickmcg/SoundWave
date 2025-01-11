@@ -389,6 +389,9 @@ const Home = () => {
               trackId={selectedTrack.id}
               audioUrl={selectedTrack.audio_url}
               isPlaying={isPlaying}
+              plays={selectedTrack.plays}
+              likes={selectedTrack.likes}
+              isLiked={likedTracks.includes(selectedTrack.id)}
               onPlayingChange={setIsPlaying}
             />
           </div>

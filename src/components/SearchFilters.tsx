@@ -10,8 +10,18 @@ import {
 import { Slider } from "@/components/ui/slider";
 import { cn } from "@/lib/utils";
 import { useSearch } from "@/lib/SearchContext";
-import { Calendar as CalendarIcon, X } from "lucide-react";
+import {
+  Calendar as CalendarIcon,
+  ChevronDown,
+  ChevronUp,
+  X,
+} from "lucide-react";
 import { format } from "date-fns";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 
 const COMMON_TAGS = [
   "electronic",
@@ -58,50 +68,68 @@ export function SearchFilters() {
   return (
     <div className="space-y-4 p-4 bg-card rounded-lg">
       {/* Genre */}
-      <div className="space-y-2">
-        <h3 className="text-sm font-medium">Genre</h3>
-        <div className="flex flex-wrap gap-2">
-          {MUSIC_GENRES.map((genre) => (
-            <Badge
-              key={genre}
-              variant={selectedGenre === genre ? "default" : "outline"}
-              className={cn(
-                "cursor-pointer",
-                selectedGenre === genre
-                  ? "bg-orange-500 hover:bg-orange-600 text-white"
-                  : "hover:bg-muted",
-              )}
-              onClick={() =>
-                setSelectedGenre(selectedGenre === genre ? null : genre)
-              }
-            >
-              {genre}
-            </Badge>
-          ))}
+      <Collapsible>
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-medium">Genre</h3>
+          <CollapsibleTrigger asChild>
+            <Button variant="ghost" size="sm" className="p-0 h-auto">
+              <ChevronDown className="h-4 w-4" />
+            </Button>
+          </CollapsibleTrigger>
         </div>
-      </div>
+        <CollapsibleContent className="mt-2">
+          <div className="flex flex-wrap gap-2">
+            {MUSIC_GENRES.map((genre) => (
+              <Badge
+                key={genre}
+                variant={selectedGenre === genre ? "default" : "outline"}
+                className={cn(
+                  "cursor-pointer",
+                  selectedGenre === genre
+                    ? "bg-orange-500 hover:bg-orange-600 text-white"
+                    : "hover:bg-muted",
+                )}
+                onClick={() =>
+                  setSelectedGenre(selectedGenre === genre ? null : genre)
+                }
+              >
+                {genre}
+              </Badge>
+            ))}
+          </div>
+        </CollapsibleContent>
+      </Collapsible>
 
       {/* Tags */}
-      <div className="space-y-2">
-        <h3 className="text-sm font-medium">Tags</h3>
-        <div className="flex flex-wrap gap-2">
-          {COMMON_TAGS.map((tag) => (
-            <Badge
-              key={tag}
-              variant={selectedTags.includes(tag) ? "default" : "outline"}
-              className={cn(
-                "cursor-pointer",
-                selectedTags.includes(tag)
-                  ? "bg-orange-500 hover:bg-orange-600 text-white"
-                  : "hover:bg-muted",
-              )}
-              onClick={() => toggleTag(tag)}
-            >
-              {tag}
-            </Badge>
-          ))}
+      <Collapsible>
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-medium">Tags</h3>
+          <CollapsibleTrigger asChild>
+            <Button variant="ghost" size="sm" className="p-0 h-auto">
+              <ChevronDown className="h-4 w-4" />
+            </Button>
+          </CollapsibleTrigger>
         </div>
-      </div>
+        <CollapsibleContent className="mt-2">
+          <div className="flex flex-wrap gap-2">
+            {COMMON_TAGS.map((tag) => (
+              <Badge
+                key={tag}
+                variant={selectedTags.includes(tag) ? "default" : "outline"}
+                className={cn(
+                  "cursor-pointer",
+                  selectedTags.includes(tag)
+                    ? "bg-orange-500 hover:bg-orange-600 text-white"
+                    : "hover:bg-muted",
+                )}
+                onClick={() => toggleTag(tag)}
+              >
+                {tag}
+              </Badge>
+            ))}
+          </div>
+        </CollapsibleContent>
+      </Collapsible>
 
       {/* Duration Range */}
       <div className="space-y-2">
