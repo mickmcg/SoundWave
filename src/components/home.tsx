@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo, useRef } from "react";
 import Header from "./Header";
 import TrackPlayer from "./track/TrackPlayer";
 import { SearchFilters } from "./SearchFilters";
@@ -9,7 +9,7 @@ import type { Track } from "@/types/database.types";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { EditTrackDialog } from "./track/EditTrackDialog";
-import { Heart, Play, Share2 } from "lucide-react";
+import { Heart, Play, Share2, Filter } from "lucide-react";
 import { AuthDialog } from "./auth/AuthDialog";
 import { useToast } from "@/components/ui/use-toast";
 
@@ -19,6 +19,7 @@ const Home = () => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [likedTracks, setLikedTracks] = useState<string[]>([]);
   const [editingTrack, setEditingTrack] = useState<Track | null>(null);
+  const [showFilters, setShowFilters] = useState(false);
   const [showAuthDialog, setShowAuthDialog] = useState(false);
   const {
     searchQuery,
@@ -32,6 +33,38 @@ const Home = () => {
   const { user } = useAuth();
   const { toast } = useToast();
 
+  // Refs to track current state without triggering effect reruns
+  const selectedTrackRef = useRef<string | null>(null);
+  const editingTrackRef = useRef<string | null>(null);
+
+  // Update refs when state changes
+  useEffect(() => {
+    selectedTrackRef.current = selectedTrack?.id || null;
+  }, [selectedTrack]);
+
+  useEffect(() => {
+    editingTrackRef.current = editingTrack?.id || null;
+  }, [editingTrack]);
+
+  // Add keyboard controls
+  useEffect(() => {
+    const handleKeyPress = (e: KeyboardEvent) => {
+      if (
+        e.target instanceof HTMLInputElement ||
+        e.target instanceof HTMLTextAreaElement
+      ) {
+        return;
+      }
+      if (e.code === "Space" && selectedTrack) {
+        e.preventDefault();
+        setIsPlaying(!isPlaying);
+      }
+    };
+    window.addEventListener("keydown", handleKeyPress);
+    return () => window.removeEventListener("keydown", handleKeyPress);
+  }, [isPlaying, selectedTrack]);
+
+  // Initial tracks fetch
   useEffect(() => {
     const fetchTracks = async () => {
       const { data, error } = await supabase
@@ -51,93 +84,77 @@ const Home = () => {
     };
 
     fetchTracks();
+  }, []);
 
-    // Subscribe to track changes
+  // Track changes subscription
+  useEffect(() => {
+    console.log("Setting up realtime subscription...");
     const channel = supabase
       .channel("tracks_channel")
       .on(
         "postgres_changes",
-        { event: "INSERT", schema: "public", table: "tracks" },
+        { event: "*", schema: "public", table: "tracks" },
         (payload: any) => {
-          setTracks((current) => [payload.new as Track, ...current]);
-          if (!selectedTrack) {
-            setSelectedTrack(payload.new as Track);
-          }
-        },
-      )
-      .on(
-        "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "tracks" },
-        (payload: any) => {
-          setTracks((current) =>
-            current.map((track) =>
-              track.id === payload.new.id
-                ? { ...track, ...payload.new }
-                : track,
-            ),
-          );
-          if (selectedTrack?.id === payload.new.id) {
-            setSelectedTrack({ ...selectedTrack, ...payload.new });
-          }
-          if (editingTrack?.id === payload.new.id) {
-            setEditingTrack({ ...editingTrack, ...payload.new });
-          }
-        },
-      )
-      .subscribe();
+          console.log("Track change received:", payload);
 
-    return () => {
-      channel.unsubscribe();
-    };
-  }, []);
-
-  // Fetch liked tracks for the current user
-  useEffect(() => {
-    const fetchLikedTracks = async () => {
-      if (!user) {
-        setLikedTracks([]);
-        return;
-      }
-
-      const { data, error } = await supabase
-        .from("track_likes")
-        .select("track_id")
-        .eq("user_id", user.id);
-
-      if (!error && data) {
-        setLikedTracks(data.map((like) => like.track_id));
-      }
-    };
-
-    fetchLikedTracks();
-
-    // Subscribe to changes in likes
-    const channel = supabase
-      .channel("likes_channel")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "track_likes" },
-        (payload) => {
           if (payload.eventType === "INSERT") {
-            setLikedTracks((current) => [...current, payload.new.track_id]);
+            const newTrack = payload.new as Track;
+            console.log("Track inserted:", newTrack);
+            setTracks((current) => [newTrack, ...current]);
+            if (!selectedTrackRef.current) {
+              setSelectedTrack(newTrack);
+            }
+          } else if (payload.eventType === "UPDATE") {
+            const updatedTrack = payload.new as Track;
+            console.log("Track updated:", updatedTrack);
+
+            // Update tracks list
+            setTracks((current) => {
+              const newTracks = current.map((track) =>
+                track.id === updatedTrack.id ? updatedTrack : track,
+              );
+              console.log("Updated tracks:", newTracks);
+              return newTracks;
+            });
+
+            // Update selected track if it's the one being edited
+            if (selectedTrackRef.current === updatedTrack.id) {
+              console.log("Updating selected track");
+              setSelectedTrack(updatedTrack);
+            }
+
+            // Close edit dialog if this track was being edited
+            if (editingTrackRef.current === updatedTrack.id) {
+              console.log("Closing edit dialog");
+              setEditingTrack(null);
+            }
           } else if (payload.eventType === "DELETE") {
-            setLikedTracks((current) =>
-              current.filter((id) => id !== payload.old.track_id),
+            const deletedTrackId = payload.old.id;
+            console.log("Track deleted:", deletedTrackId);
+            setTracks((current) =>
+              current.filter((track) => track.id !== deletedTrackId),
             );
+            if (selectedTrackRef.current === deletedTrackId) {
+              setSelectedTrack(null);
+            }
+            if (editingTrackRef.current === deletedTrackId) {
+              setEditingTrack(null);
+            }
           }
         },
       )
       .subscribe();
 
+    console.log("Subscription set up successfully");
     return () => {
       channel.unsubscribe();
     };
-  }, [user]);
+  }, []); // Empty dependency array since we're using refs
 
-  // Filter tracks
+  // Filter tracks based on search criteria
   const filteredTracks = useMemo(() => {
     return tracks.filter((track) => {
-      // Search query
+      // Text search
       if (
         searchQuery &&
         !track.title.toLowerCase().includes(searchQuery.toLowerCase()) &&
@@ -167,19 +184,17 @@ const Home = () => {
         return false;
       }
 
-      // BPM Range
-      if (track.metadata?.bpm) {
-        if (
-          track.metadata.bpm < bpmRange[0] ||
-          track.metadata.bpm > bpmRange[1]
-        ) {
-          return false;
-        }
+      // BPM
+      if (
+        track.metadata?.bpm &&
+        (track.metadata.bpm < bpmRange[0] || track.metadata.bpm > bpmRange[1])
+      ) {
+        return false;
       }
 
       // Date range
       if (dateRange[0] || dateRange[1]) {
-        const trackDate = new Date(track.created_at || "");
+        const trackDate = new Date(track.created_at);
         if (dateRange[0] && trackDate < dateRange[0]) return false;
         if (dateRange[1] && trackDate > dateRange[1]) return false;
       }
@@ -197,14 +212,8 @@ const Home = () => {
   ]);
 
   const handleTrackSelect = (track: Track) => {
-    if (track.id === selectedTrack?.id) {
-      // If clicking the same track, toggle play/pause
-      setIsPlaying(!isPlaying);
-    } else {
-      // If clicking a different track, select it and start playing
-      setSelectedTrack(track);
-      setIsPlaying(true);
-    }
+    setSelectedTrack(track);
+    setIsPlaying(true);
   };
 
   const handleLike = async (e: React.MouseEvent, track: Track) => {
@@ -214,40 +223,31 @@ const Home = () => {
       return;
     }
 
-    const isLiked = likedTracks.includes(track.id);
     try {
-      if (isLiked) {
+      if (likedTracks.includes(track.id)) {
         await supabase
           .from("track_likes")
           .delete()
           .match({ track_id: track.id, user_id: user.id });
+        setLikedTracks(likedTracks.filter((id) => id !== track.id));
       } else {
         await supabase
           .from("track_likes")
           .insert({ track_id: track.id, user_id: user.id });
+        setLikedTracks([...likedTracks, track.id]);
       }
     } catch (error) {
       console.error("Error toggling like:", error);
     }
   };
 
-  const handleCopyLink = async (e: React.MouseEvent, track: Track) => {
+  const handleCopyLink = (e: React.MouseEvent, track: Track) => {
     e.stopPropagation();
     const url = `${window.location.origin}/?track=${track.id}`;
-    try {
-      await navigator.clipboard.writeText(url);
-      toast({
-        description: "Link copied to clipboard!",
-        duration: 2000,
-      });
-    } catch (error) {
-      console.error("Failed to copy link:", error);
-      toast({
-        variant: "destructive",
-        description: "Failed to copy link",
-        duration: 2000,
-      });
-    }
+    navigator.clipboard.writeText(url);
+    toast({
+      description: "Track link copied to clipboard",
+    });
   };
 
   const renderContent = () => {
@@ -262,7 +262,7 @@ const Home = () => {
     if (filteredTracks.length === 0) {
       return (
         <div className="text-center text-muted-foreground">
-          No tracks match your search criteria.
+          No tracks match your search criteria.{" "}
           <Button
             variant="link"
             onClick={clearFilters}
@@ -372,13 +372,26 @@ const Home = () => {
     <div className="flex flex-col h-screen bg-background text-foreground">
       <Header />
       <div className="flex-1 overflow-auto p-6">
-        <div className="max-w-[1512px] mx-auto grid grid-cols-[250px,1fr] gap-6">
-          <SearchFilters />
-          <div className="space-y-4">{renderContent()}</div>
+        <div className="max-w-[1512px] mx-auto">
+          <div className="mb-4 md:hidden">
+            <Button
+              variant="outline"
+              onClick={() => setShowFilters(!showFilters)}
+              className="w-full"
+            >
+              <Filter className="mr-2 h-4 w-4" />
+              {showFilters ? "Hide Filters" : "Show Filters"}
+            </Button>
+          </div>
+          <div className="grid md:grid-cols-[250px,1fr] gap-6">
+            <div className={`${!showFilters ? "hidden" : ""} md:block`}>
+              <SearchFilters />
+            </div>
+            <div className="space-y-4">{renderContent()}</div>
+          </div>
         </div>
       </div>
 
-      {/* Fixed Player at Bottom - Always show if there's a selected track */}
       {selectedTrack && (
         <div className="border-t bg-card">
           <div className="max-w-[1512px] mx-auto">
@@ -386,6 +399,7 @@ const Home = () => {
               trackTitle={selectedTrack.title}
               artistName={selectedTrack.artist}
               coverArt={selectedTrack.cover_art_url || undefined}
+              genre={selectedTrack.genre}
               trackId={selectedTrack.id}
               audioUrl={selectedTrack.audio_url}
               isPlaying={isPlaying}
@@ -393,12 +407,12 @@ const Home = () => {
               likes={selectedTrack.likes}
               isLiked={likedTracks.includes(selectedTrack.id)}
               onPlayingChange={setIsPlaying}
+              metadata={selectedTrack.metadata}
             />
           </div>
         </div>
       )}
 
-      {/* Edit Track Dialog */}
       {editingTrack && (
         <EditTrackDialog
           open={!!editingTrack}
@@ -407,7 +421,6 @@ const Home = () => {
         />
       )}
 
-      {/* Auth Dialog */}
       <AuthDialog open={showAuthDialog} onOpenChange={setShowAuthDialog} />
     </div>
   );

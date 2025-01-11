@@ -16,6 +16,7 @@ interface TrackPlayerProps {
   trackId?: string;
   audioUrl?: string;
   isPlaying?: boolean;
+  genre?: string | null;
   onPlayingChange?: (isPlaying: boolean) => void;
   metadata?: {
     bpm?: number | null;
@@ -31,6 +32,7 @@ export const TrackPlayer = ({
   coverArt = "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=300&h=300&fit=crop",
   trackId,
   audioUrl,
+  genre,
   isPlaying: externalIsPlaying = false,
   onPlayingChange,
   metadata,
@@ -242,11 +244,21 @@ export const TrackPlayer = ({
             <div className="mb-2">
               <div className="flex items-center gap-2">
                 <h2 className="text-sm font-medium truncate">{trackTitle}</h2>
-                {metadata?.bpm && (
-                  <Badge variant="outline" className="text-xs">
-                    {metadata.bpm} BPM
-                  </Badge>
-                )}
+                <div className="flex items-center gap-2">
+                  {genre && (
+                    <Badge
+                      variant="default"
+                      className="text-xs bg-orange-500 hover:bg-orange-600"
+                    >
+                      {genre}
+                    </Badge>
+                  )}
+                  {metadata?.bpm && (
+                    <Badge variant="outline" className="text-xs">
+                      {metadata.bpm} BPM
+                    </Badge>
+                  )}
+                </div>
               </div>
               <p className="text-xs text-muted-foreground truncate">
                 {artistName}

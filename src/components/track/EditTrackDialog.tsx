@@ -22,7 +22,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Trash2, X } from "lucide-react";
+import { Trash2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import type { Track } from "@/types/database.types";
 
@@ -52,6 +52,7 @@ export function EditTrackDialog({
   const [selectedGenre, setSelectedGenre] = useState<string | null>(
     track.genre || null,
   );
+  const [bpm, setBpm] = useState<number | null>(track.metadata?.bpm || null);
   const [coverArtUrl, setCoverArtUrl] = useState(track.cover_art_url || "");
   const [saving, setSaving] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
@@ -62,6 +63,7 @@ export function EditTrackDialog({
     setArtist(track.artist);
     setSelectedTags(track.tags || []);
     setSelectedGenre(track.genre || null);
+    setBpm(track.metadata?.bpm || null);
     setCoverArtUrl(track.cover_art_url || "");
   }, [track]);
 
@@ -69,20 +71,30 @@ export function EditTrackDialog({
     setSaving(true);
     try {
       const updates = {
-        title,
-        artist,
+        title: title.trim(),
+        artist: artist.trim(),
         tags: selectedTags,
         genre: selectedGenre,
-        cover_art_url: coverArtUrl || null,
+        cover_art_url: coverArtUrl.trim() || null,
         updated_at: new Date().toISOString(),
+        metadata: {
+          ...track.metadata,
+          bpm: bpm ? parseInt(bpm.toString(), 10) : null,
+        },
       };
 
-      const { error } = await supabase
+      console.log("Updating track:", track.id, "with:", updates);
+
+      const { data, error } = await supabase
         .from("tracks")
         .update(updates)
-        .eq("id", track.id);
+        .eq("id", track.id)
+        .select()
+        .single();
 
       if (error) throw error;
+
+      console.log("Track updated successfully:", data);
       onOpenChange(false);
     } catch (error) {
       console.error("Error updating track:", error);
@@ -173,6 +185,19 @@ export function EditTrackDialog({
                 value={coverArtUrl}
                 onChange={(e) => setCoverArtUrl(e.target.value)}
                 placeholder="https://example.com/image.jpg"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="bpm">BPM</Label>
+              <Input
+                id="bpm"
+                type="number"
+                value={bpm || ""}
+                onChange={(e) =>
+                  setBpm(e.target.value ? Number(e.target.value) : null)
+                }
+                placeholder="120"
               />
             </div>
 
