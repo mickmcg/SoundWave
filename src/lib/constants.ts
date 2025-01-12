@@ -32,3 +32,102 @@ export const MUSIC_GENRES = [
 ] as const;
 
 export type MusicGenre = (typeof MUSIC_GENRES)[number];
+
+export const MUSICAL_KEYS = [
+  "A",
+  "A♯",
+  "B♭",
+  "B",
+  "C",
+  "C♯",
+  "D♭",
+  "D",
+  "D♯",
+  "E♭",
+  "E",
+  "F",
+  "F♯",
+  "G♭",
+  "G",
+  "G♯",
+  "A♭",
+] as const;
+
+export const MUSICAL_MODES = [
+  "Major",
+  "Minor",
+  "Dorian",
+  "Mixolydian",
+  "Lydian",
+  "Phrygian",
+  "Locrian",
+  "Whole Tone",
+  "Half-whole Dim.",
+  "Whole-half Dim.",
+  "Minor Blues",
+  "Minor Pentatonic",
+  "Major Pentatonic",
+  "Harmonic Minor",
+  "Harmonic Major",
+  "Dorian #4",
+  "Phrygian Dominant",
+  "Melodic Minor",
+  "Lydian Augmented",
+  "Lydian Dominant",
+  "Super Locrian",
+  "8-Tone Spanish",
+  "Bhairav",
+  "Hungarian Minor",
+  "Hirajoshi",
+  "In-Sen",
+  "Iwato",
+  "Kumoi",
+  "Pelog Selisir",
+  "Pelog Tembung",
+  "Messiaen 3",
+  "Messiaen 4",
+  "Messiaen 5",
+  "Messiaen 6",
+  "Messiaen 7",
+] as const;
+
+export type MusicalKey = (typeof MUSICAL_KEYS)[number];
+export type MusicalMode = (typeof MUSICAL_MODES)[number];
+
+// Key normalization mapping
+export const KEY_MAPPING: Record<string, string> = {
+  // Standard notation
+  A: "A",
+  B: "B",
+  C: "C",
+  D: "D",
+  E: "E",
+  F: "F",
+  G: "G",
+
+  // Sharp variations
+  "A#": "A♯",
+  "C#": "C♯",
+  "D#": "D♯",
+  "F#": "F♯",
+  "G#": "G♯",
+
+  // Flat variations
+  BB: "B♭",
+  DB: "D♭",
+  EB: "E♭",
+  GB: "G♭",
+  AB: "A♭",
+
+  // Alternative notations
+  "A SHARP": "A♯",
+  "C SHARP": "C♯",
+  "D SHARP": "D♯",
+  "F SHARP": "F♯",
+  "G SHARP": "G♯",
+  "B FLAT": "B♭",
+  "D FLAT": "D♭",
+  "E FLAT": "E♭",
+  "G FLAT": "G♭",
+  "A FLAT": "A♭",
+};

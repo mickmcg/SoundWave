@@ -1,5 +1,5 @@
 import { useState, useCallback } from "react";
-import * as mm from "music-metadata";
+import * as jsmediatags from "jsmediatags/dist/jsmediatags.min.js";
 import {
   Dialog,
   DialogContent,
@@ -11,11 +11,24 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
-import { Upload, X } from "lucide-react";
+import { Upload, X, AlertCircle, ImagePlus } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/AuthContext";
-import { MUSIC_GENRES } from "@/lib/constants";
+import {
+  MUSIC_GENRES,
+  MUSICAL_KEYS,
+  MUSICAL_MODES,
+  KEY_MAPPING,
+} from "@/lib/constants";
 import { Badge } from "@/components/ui/badge";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 interface UploadDialogProps {
   open: boolean;
@@ -24,6 +37,7 @@ interface UploadDialogProps {
 
 const ACCEPTED_FILE_TYPES = [".wav", ".aiff", ".mp3"];
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
+const MAX_COVER_SIZE = 1024 * 1024; // 1MB
 
 export function UploadDialog({ open, onOpenChange }: UploadDialogProps) {
   const [file, setFile] = useState<File | null>(null);
@@ -31,75 +45,237 @@ export function UploadDialog({ open, onOpenChange }: UploadDialogProps) {
   const [artist, setArtist] = useState("");
   const [genre, setGenre] = useState<string | null>(null);
   const [bpm, setBpm] = useState<number | null>(null);
+  const [musicalKey, setMusicalKey] = useState<string | null>(null);
+  const [musicalMode, setMusicalMode] = useState<string | null>(null);
   const [year, setYear] = useState<string | null>(null);
   const [album, setAlbum] = useState<string | null>(null);
+  const [coverArt, setCoverArt] = useState<string | null>(null);
+  const [coverArtFile, setCoverArtFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [analyzing, setAnalyzing] = useState(false);
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState("");
+  const [analysisError, setAnalysisError] = useState("");
   const [isDragging, setIsDragging] = useState(false);
   const { user } = useAuth();
 
-  const extractMetadata = async (file: File) => {
+  const analyzeAudio = async (file: File) => {
     try {
-      const metadata = await mm.parseBlob(file);
-      const { common, format } = metadata;
-      console.log("Extracted metadata:", metadata);
+      console.log("Starting audio analysis...");
+      const audioContext = new (window.AudioContext ||
+        (window as any).webkitAudioContext)();
+      const arrayBuffer = await file.arrayBuffer();
+      const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+      const audioData = audioBuffer.getChannelData(0);
 
-      // Extract basic metadata
-      if (common.title) setTitle(common.title);
-      if (common.artist) setArtist(common.artist);
-      if (common.album) setAlbum(common.album);
-      if (common.year) setYear(common.year.toString());
-      if (common.bpm) setBpm(common.bpm);
+      // Enhanced BPM detection
+      const sampleRate = audioBuffer.sampleRate;
+      const bufferSize = 2048;
+      const peaks = [];
+      let threshold = 0.15;
+      let prevPeak = 0;
+      let minPeakDistance = sampleRate * 0.2;
 
-      // Handle genre - try to match with our predefined genres
-      if (common.genre && common.genre.length > 0) {
-        const extractedGenre = common.genre[0];
-        const matchedGenre = MUSIC_GENRES.find(
-          (g) =>
-            g.toLowerCase() === extractedGenre.toLowerCase() ||
-            extractedGenre.toLowerCase().includes(g.toLowerCase()),
-        );
-        if (matchedGenre) setGenre(matchedGenre);
-      }
+      for (let i = 0; i < audioData.length; i += bufferSize) {
+        const chunk = audioData.slice(i, i + bufferSize);
+        const peak = Math.max(...chunk.map(Math.abs));
 
-      // Handle embedded artwork
-      if (common.picture && common.picture.length > 0) {
-        const picture = common.picture[0];
-        const blob = new Blob([picture.data], { type: picture.format });
-        const coverFile = new File(
-          [blob],
-          `cover.${picture.format.split("/")[1]}`,
-          { type: picture.format },
-        );
-
-        // Upload artwork to storage
-        const coverFileName = `covers/${user?.id}/${Date.now()}-${Math.random().toString(36).substring(7)}.${coverFile.name.split(".").pop()}`;
-        const { error: coverError, data: coverData } = await supabase.storage
-          .from("tracks")
-          .upload(coverFileName, coverFile, {
-            cacheControl: "3600",
-            upsert: false,
-          });
-
-        if (!coverError) {
-          const {
-            data: { publicUrl: coverUrl },
-          } = supabase.storage.from("tracks").getPublicUrl(coverFileName);
-          return { coverUrl, duration: format.duration };
+        if (peak > threshold && i - prevPeak > minPeakDistance) {
+          peaks.push(i / sampleRate);
+          prevPeak = i;
         }
       }
 
-      return { duration: format.duration };
+      const intervals = peaks.slice(1).map((peak, i) => peak - peaks[i]);
+      const sortedIntervals = intervals.sort((a, b) => a - b);
+      const validIntervals = sortedIntervals.slice(
+        Math.floor(sortedIntervals.length * 0.2),
+        Math.floor(sortedIntervals.length * 0.8),
+      );
+
+      const avgInterval =
+        validIntervals.reduce((a, b) => a + b, 0) / validIntervals.length;
+      let estimatedBPM = Math.round(60 / avgInterval);
+
+      // Always halve the BPM if it's above 150
+      if (estimatedBPM > 150) {
+        estimatedBPM = Math.round(estimatedBPM / 2);
+      }
+
+      console.log(
+        "Analysis complete. Raw BPM:",
+        estimatedBPM * 2,
+        "Halved BPM:",
+        estimatedBPM,
+      );
+      return {
+        duration: audioBuffer.duration,
+        bpm: estimatedBPM,
+      };
     } catch (error) {
-      console.error("Error extracting metadata:", error);
-      setError("Error extracting metadata. Using default values.");
-      return {};
+      console.error("Error analyzing audio:", error);
+      throw error;
     }
+  };
+
+  const extractMetadata = async (file: File) => {
+    setAnalyzing(true);
+    setAnalysisError("");
+    try {
+      console.log("Starting metadata extraction...");
+
+      // Read ID3 tags using jsmediatags
+      await new Promise((resolve, reject) => {
+        jsmediatags.read(file, {
+          onSuccess: function (tag) {
+            console.log("Read ID3 tags:", tag);
+
+            // Extract basic metadata
+            if (tag.tags) {
+              setTitle(tag.tags.title || file.name.replace(/\.[^/.]+$/, ""));
+              setArtist(tag.tags.artist || "");
+              setYear(tag.tags.year?.toString() || null);
+              setAlbum(tag.tags.album || null);
+
+              // Handle genre
+              if (tag.tags.genre) {
+                const genreStr = tag.tags.genre.toString();
+                const matchedGenre = MUSIC_GENRES.find((g) =>
+                  genreStr.toLowerCase().includes(g.toLowerCase()),
+                );
+                if (matchedGenre) {
+                  setGenre(matchedGenre);
+                }
+              }
+
+              // Try to get key from TKEY frame
+              const tkey = tag.tags.TKEY;
+              if (tkey) {
+                console.log("Found TKEY:", tkey);
+                const normalizedKey = normalizeKey(tkey.data);
+                if (normalizedKey) {
+                  console.log("Setting normalized key:", normalizedKey);
+                  setMusicalKey(normalizedKey);
+                  setMusicalMode("Major"); // Default to Major if not specified
+                }
+              }
+
+              // Extract album art
+              if (tag.tags.picture) {
+                const { data, format } = tag.tags.picture;
+                const base64String = btoa(
+                  data.reduce(
+                    (acc, byte) => acc + String.fromCharCode(byte),
+                    "",
+                  ),
+                );
+                const imageUrl = `data:${format};base64,${base64String}`;
+                console.log("Found album art:", format);
+                setCoverArt(imageUrl);
+
+                // Convert base64 to File object
+                fetch(imageUrl)
+                  .then((res) => res.blob())
+                  .then((blob) => {
+                    const file = new File([blob], "cover.jpg", {
+                      type: format,
+                    });
+                    setCoverArtFile(file);
+                  });
+              }
+            }
+            resolve(null);
+          },
+          onError: function (error) {
+            console.log("Error reading ID3:", error);
+            resolve(null); // Continue even if ID3 reading fails
+          },
+        });
+      });
+
+      // Always analyze audio for BPM
+      console.log("Starting BPM analysis...");
+      const analysis = await analyzeAudio(file);
+      console.log("Using analyzed BPM:", analysis.bpm);
+      setBpm(analysis.bpm);
+    } catch (error) {
+      console.error("Error during analysis:", error);
+      setAnalysisError(
+        "Failed to analyze audio. You can set the metadata manually.",
+      );
+      setBpm(null);
+    } finally {
+      setAnalyzing(false);
+    }
+  };
+
+  const handleCoverArtChange = async (
+    e: React.ChangeEvent<HTMLInputElement>,
+  ) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      // Validate file type
+      const fileType = file.type.toLowerCase();
+      if (
+        !fileType.startsWith("image/jpeg") &&
+        !fileType.startsWith("image/png")
+      ) {
+        setError("Cover art must be a JPG or PNG file");
+        return;
+      }
+
+      // Validate file size
+      if (file.size > MAX_COVER_SIZE) {
+        setError("Cover art must be less than 1MB");
+        return;
+      }
+
+      // Clear any previous errors
+      setError("");
+
+      // Create object URL for preview
+      const url = URL.createObjectURL(file);
+
+      // Update state
+      setCoverArt(url);
+      setCoverArtFile(file);
+    }
+  };
+
+  // Helper function to normalize musical keys
+  const normalizeKey = (key: string): string | null => {
+    if (!key) return null;
+
+    // Remove any whitespace and convert to uppercase
+    const cleanKey = key.trim().toUpperCase();
+    console.log("Normalizing key:", cleanKey);
+
+    // Check direct match first
+    if (MUSICAL_KEYS.includes(cleanKey as any)) {
+      console.log("Found direct key match:", cleanKey);
+      return cleanKey;
+    }
+
+    // Try mapping
+    const mappedKey = KEY_MAPPING[cleanKey];
+    if (mappedKey && MUSICAL_KEYS.includes(mappedKey as any)) {
+      console.log("Found mapped key:", mappedKey);
+      return mappedKey;
+    }
+
+    // If no match found, log and return null
+    console.log("No valid key mapping found for:", cleanKey);
+    return null;
   };
 
   const handleFile = async (file: File) => {
     setError("");
+    setAnalysisError("");
+    setBpm(null);
+    setMusicalKey(null);
+    setMusicalMode(null);
+    setCoverArt(null);
+    setCoverArtFile(null);
 
     // Validate file type
     const fileType = `.${file.name.split(".").pop()?.toLowerCase()}`;
@@ -112,21 +288,14 @@ export function UploadDialog({ open, onOpenChange }: UploadDialogProps) {
 
     // Validate file size
     if (file.size > MAX_FILE_SIZE) {
-      setError("File size must be less than 50MB");
+      setError(
+        `File too large. Maximum size: ${MAX_FILE_SIZE / 1024 / 1024}MB`,
+      );
       return;
     }
 
     setFile(file);
-    setTitle(file.name.split(".")[0]); // Default title as filename
-
-    // Extract metadata
-    const metadata = await extractMetadata(file);
-    if (metadata.coverUrl) {
-      (file as any).coverUrl = metadata.coverUrl;
-    }
-    if (metadata.duration) {
-      (file as any).duration = metadata.duration;
-    }
+    await extractMetadata(file);
   };
 
   const handleDrop = useCallback(async (e: React.DragEvent<HTMLDivElement>) => {
@@ -139,16 +308,6 @@ export function UploadDialog({ open, onOpenChange }: UploadDialogProps) {
     }
   }, []);
 
-  const handleDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    setIsDragging(true);
-  }, []);
-
-  const handleDragLeave = useCallback((e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    setIsDragging(false);
-  }, []);
-
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
     if (selectedFile) {
@@ -157,61 +316,77 @@ export function UploadDialog({ open, onOpenChange }: UploadDialogProps) {
   };
 
   const handleUpload = async () => {
-    if (!file || !title.trim() || !user) return;
+    if (!file || !user) return;
+
+    setUploading(true);
+    setProgress(0);
+    setError("");
 
     try {
-      setUploading(true);
-      setProgress(0);
-
-      // Upload to Supabase Storage
-      const fileExt = file.name.split(".").pop();
-      const fileName = `${user.id}/${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
-
-      const { error: uploadError, data } = await supabase.storage
+      // Upload audio file
+      const audioFileName = `${Date.now()}-${file.name}`;
+      const { error: uploadError, data: audioData } = await supabase.storage
         .from("tracks")
-        .upload(fileName, file, {
+        .upload(audioFileName, file, {
           cacheControl: "3600",
           upsert: false,
+          onUploadProgress: (progress) => {
+            setProgress((progress.loaded / progress.total) * 100);
+          },
         });
 
       if (uploadError) throw uploadError;
 
-      // Get public URL
+      // Upload cover art if provided
+      let coverArtUrl = null;
+      if (coverArtFile) {
+        const coverFileName = `covers/${Date.now()}-cover.jpg`;
+        const { error: coverUploadError } = await supabase.storage
+          .from("tracks")
+          .upload(coverFileName, coverArtFile, {
+            cacheControl: "3600",
+            upsert: false,
+          });
+
+        if (coverUploadError) {
+          console.error("Error uploading cover art:", coverUploadError);
+        } else {
+          const {
+            data: { publicUrl },
+          } = supabase.storage.from("tracks").getPublicUrl(coverFileName);
+          coverArtUrl = publicUrl;
+        }
+      }
+
+      // Get public URL for the uploaded file
       const {
-        data: { publicUrl },
-      } = supabase.storage.from("tracks").getPublicUrl(fileName);
+        data: { publicUrl: audioUrl },
+      } = supabase.storage.from("tracks").getPublicUrl(audioFileName);
 
       // Create track record in database
       const { error: dbError } = await supabase.from("tracks").insert({
-        title,
-        artist: artist || user.email?.split("@")[0] || "Anonymous",
-        audio_url: publicUrl,
-        cover_art_url: (file as any).coverUrl || null,
-        duration: (file as any).duration || 0,
+        title: title.trim(),
+        artist: artist.trim(),
+        audio_url: audioUrl,
+        cover_art_url: coverArtUrl,
+        duration: 0, // TODO: Get actual duration
         genre: genre,
         user_id: user.id,
-        tags: [],
         metadata: {
+          bpm: bpm ? parseInt(bpm.toString(), 10) : null,
+          key:
+            musicalKey && musicalMode ? `${musicalKey} ${musicalMode}` : null,
           album,
           year,
-          bpm,
         },
       });
 
       if (dbError) throw dbError;
 
-      // Reset form and close dialog
-      setFile(null);
-      setTitle("");
-      setArtist("");
-      setGenre(null);
-      setBpm(null);
-      setYear(null);
-      setAlbum(null);
       onOpenChange(false);
-    } catch (error: any) {
-      console.error("Upload error:", error);
-      setError(error.message || "Failed to upload track. Please try again.");
+    } catch (error) {
+      console.error("Error uploading track:", error);
+      setError("Failed to upload track. Please try again.");
     } finally {
       setUploading(false);
     }
@@ -219,111 +394,169 @@ export function UploadDialog({ open, onOpenChange }: UploadDialogProps) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent>
         <DialogHeader>
           <DialogTitle>Upload Track</DialogTitle>
           <DialogDescription>
-            Upload your audio track in WAV, AIFF, or MP3 format.
+            Upload your track and add metadata. WAV, AIFF, and MP3 formats are
+            supported.
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-6">
           {!file ? (
             <div
-              className={`flex flex-col items-center justify-center gap-4 p-8 border-2 ${isDragging ? "border-orange-500 bg-orange-500/10" : "border-dashed"} rounded-lg transition-colors`}
+              className={`border-2 border-dashed rounded-lg p-8 text-center ${isDragging ? "border-primary bg-primary/10" : "border-muted"}`}
+              onDragOver={(e) => {
+                e.preventDefault();
+                setIsDragging(true);
+              }}
+              onDragLeave={() => setIsDragging(false)}
               onDrop={handleDrop}
-              onDragOver={handleDragOver}
-              onDragLeave={handleDragLeave}
             >
-              <Upload
-                className={`w-8 h-8 ${isDragging ? "text-orange-500" : "text-gray-400"}`}
-              />
-              <div className="text-center">
-                <Label
-                  htmlFor="audio-upload"
-                  className="text-orange-500 hover:text-orange-600 cursor-pointer"
-                >
-                  Choose a file
-                </Label>
-                <p className="text-sm text-muted-foreground mt-1">
-                  or drag and drop here
+              <div className="flex flex-col items-center gap-2">
+                <Upload className="w-8 h-8 text-muted-foreground" />
+                <p className="text-sm text-muted-foreground">
+                  Drag and drop your audio file here, or
                 </p>
-                <p className="text-sm text-muted-foreground mt-1">
-                  WAV, AIFF, or MP3 (max. 50MB)
-                </p>
+                <label htmlFor="file-upload">
+                  <input
+                    id="file-upload"
+                    type="file"
+                    className="hidden"
+                    accept={ACCEPTED_FILE_TYPES.join(",")}
+                    onChange={handleFileChange}
+                  />
+                  <Button
+                    variant="outline"
+                    className="cursor-pointer"
+                    type="button"
+                  >
+                    Choose File
+                  </Button>
+                </label>
               </div>
-              <Input
-                id="audio-upload"
-                type="file"
-                accept={ACCEPTED_FILE_TYPES.join(",")}
-                className="hidden"
-                onChange={handleFileChange}
-              />
             </div>
           ) : (
+            <div className="flex items-center gap-4 p-4 rounded-lg bg-muted">
+              <div className="flex-1 truncate">
+                <p className="font-medium truncate">{file.name}</p>
+                <p className="text-sm text-muted-foreground">
+                  {(file.size / 1024 / 1024).toFixed(2)} MB
+                </p>
+              </div>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => {
+                  setFile(null);
+                  setTitle("");
+                  setArtist("");
+                  setGenre(null);
+                  setBpm(null);
+                  setMusicalKey(null);
+                  setMusicalMode(null);
+                  setYear(null);
+                  setAlbum(null);
+                  setCoverArt(null);
+                  setCoverArtFile(null);
+                }}
+              >
+                <X className="w-4 h-4" />
+              </Button>
+            </div>
+          )}
+
+          {error && (
+            <Alert variant="destructive">
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
+
+          {file && (
             <div className="space-y-4">
-              <div className="flex items-center gap-2 p-3 bg-muted rounded">
-                <div className="flex-1 truncate">{file.name}</div>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => setFile(null)}
-                >
-                  <X className="w-4 h-4" />
-                </Button>
+              {(uploading || analyzing) && (
+                <div className="space-y-2">
+                  {uploading && <Progress value={progress} />}
+                  <p className="text-sm text-center text-muted-foreground">
+                    {uploading
+                      ? `Uploading... ${Math.round(progress)}%`
+                      : "Analyzing audio..."}
+                    {analyzing && (
+                      <span className="block text-xs mt-1">
+                        Detecting BPM and extracting metadata...
+                      </span>
+                    )}
+                  </p>
+                </div>
+              )}
+
+              {analysisError && (
+                <Alert variant="warning">
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertDescription>{analysisError}</AlertDescription>
+                </Alert>
+              )}
+
+              <div className="space-y-2">
+                <Label>Cover Art</Label>
+                <div className="flex items-start gap-4">
+                  {coverArt ? (
+                    <div className="relative group">
+                      <img
+                        src={coverArt}
+                        alt="Cover Art Preview"
+                        className="w-32 h-32 object-cover rounded-lg"
+                      />
+                      <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/50 rounded-lg">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-white"
+                          onClick={() => {
+                            setCoverArt(null);
+                            setCoverArtFile(null);
+                          }}
+                        >
+                          Remove
+                        </Button>
+                      </div>
+                    </div>
+                  ) : null}
+                  <label className="flex-1">
+                    <input
+                      type="file"
+                      accept=".jpg,.jpeg,.png"
+                      className="hidden"
+                      onChange={handleCoverArtChange}
+                    />
+                    <Button variant="outline" className="w-full" type="button">
+                      <ImagePlus className="w-4 h-4 mr-2" />
+                      {coverArt ? "Change Cover Art" : "Add Cover Art"}
+                    </Button>
+                  </label>
+                </div>
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="title">Track Title</Label>
+                <Label htmlFor="title">Title</Label>
                 <Input
                   id="title"
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
-                  placeholder="Enter track title"
+                  required
                 />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="artist">Artist Name</Label>
+                <Label htmlFor="artist">Artist</Label>
                 <Input
                   id="artist"
                   value={artist}
                   onChange={(e) => setArtist(e.target.value)}
-                  placeholder="Enter artist name"
+                  required
                 />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="album">Album</Label>
-                <Input
-                  id="album"
-                  value={album || ""}
-                  onChange={(e) => setAlbum(e.target.value)}
-                  placeholder="Enter album name"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="year">Year</Label>
-                  <Input
-                    id="year"
-                    value={year || ""}
-                    onChange={(e) => setYear(e.target.value)}
-                    placeholder="YYYY"
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="bpm">BPM</Label>
-                  <Input
-                    id="bpm"
-                    type="number"
-                    value={bpm || ""}
-                    onChange={(e) => setBpm(Number(e.target.value))}
-                    placeholder="120"
-                  />
-                </div>
               </div>
 
               <div className="space-y-2">
@@ -341,35 +574,112 @@ export function UploadDialog({ open, onOpenChange }: UploadDialogProps) {
                   ))}
                 </div>
               </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="bpm">BPM {analyzing && "(Analyzing...)"}</Label>
+                <Input
+                  id="bpm"
+                  type="number"
+                  value={bpm || ""}
+                  onChange={(e) =>
+                    setBpm(e.target.value ? Number(e.target.value) : null)
+                  }
+                  placeholder="120"
+                  disabled={analyzing}
+                  className={analyzing ? "opacity-50 cursor-wait" : ""}
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="key">
+                    Key {analyzing && "(Analyzing...)"}
+                  </Label>
+                  <Select
+                    value={musicalKey || ""}
+                    onValueChange={(value) => setMusicalKey(value || null)}
+                    disabled={analyzing}
+                  >
+                    <SelectTrigger id="key">
+                      <SelectValue placeholder="Select key" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {MUSICAL_KEYS.map((key) => (
+                        <SelectItem key={key} value={key}>
+                          {key}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="mode">
+                    Mode/Scale {analyzing && "(Analyzing...)"}
+                  </Label>
+                  <Select
+                    value={musicalMode || ""}
+                    onValueChange={(value) => setMusicalMode(value || null)}
+                    disabled={analyzing}
+                  >
+                    <SelectTrigger id="mode">
+                      <SelectValue placeholder="Select mode" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {MUSICAL_MODES.map((mode) => (
+                        <SelectItem key={mode} value={mode}>
+                          {mode}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="year">Year</Label>
+                  <Input
+                    id="year"
+                    type="number"
+                    value={year || ""}
+                    onChange={(e) =>
+                      setYear(e.target.value ? e.target.value : null)
+                    }
+                    placeholder="2024"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="album">Album</Label>
+                  <Input
+                    id="album"
+                    value={album || ""}
+                    onChange={(e) =>
+                      setAlbum(e.target.value ? e.target.value : null)
+                    }
+                    placeholder="Optional"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => onOpenChange(false)}
+                  disabled={uploading}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleUpload}
+                  disabled={!file || !title || !artist || uploading}
+                >
+                  Upload
+                </Button>
+              </div>
             </div>
           )}
-
-          {error && <p className="text-sm text-red-500">{error}</p>}
-
-          {uploading && (
-            <div className="space-y-2">
-              <Progress value={progress} />
-              <p className="text-sm text-muted-foreground text-center">
-                Uploading... {Math.round(progress)}%
-              </p>
-            </div>
-          )}
-
-          <div className="flex justify-end gap-2">
-            <Button
-              variant="outline"
-              onClick={() => onOpenChange(false)}
-              disabled={uploading}
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={handleUpload}
-              disabled={!file || !title.trim() || uploading}
-            >
-              Upload
-            </Button>
-          </div>
         </div>
       </DialogContent>
     </Dialog>

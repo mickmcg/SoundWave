@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { MUSIC_GENRES } from "@/lib/constants";
+import { MUSIC_GENRES, MUSICAL_KEYS, MUSICAL_MODES } from "@/lib/constants";
 import {
   Dialog,
   DialogContent,
@@ -25,6 +25,13 @@ import { Badge } from "@/components/ui/badge";
 import { Trash2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import type { Track } from "@/types/database.types";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 interface EditTrackDialogProps {
   open: boolean;
@@ -53,6 +60,12 @@ export function EditTrackDialog({
     track.genre || null,
   );
   const [bpm, setBpm] = useState<number | null>(track.metadata?.bpm || null);
+  const [musicalKey, setMusicalKey] = useState<string | null>(
+    track.metadata?.key?.split(" ")[0] || null,
+  );
+  const [musicalMode, setMusicalMode] = useState<string | null>(
+    track.metadata?.key?.split(" ").slice(1).join(" ") || null,
+  );
   const [coverArtUrl, setCoverArtUrl] = useState(track.cover_art_url || "");
   const [saving, setSaving] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
@@ -64,6 +77,8 @@ export function EditTrackDialog({
     setSelectedTags(track.tags || []);
     setSelectedGenre(track.genre || null);
     setBpm(track.metadata?.bpm || null);
+    setMusicalKey(track.metadata?.key?.split(" ")[0] || null);
+    setMusicalMode(track.metadata?.key?.split(" ").slice(1).join(" ") || null);
     setCoverArtUrl(track.cover_art_url || "");
   }, [track]);
 
@@ -80,6 +95,8 @@ export function EditTrackDialog({
         metadata: {
           ...track.metadata,
           bpm: bpm ? parseInt(bpm.toString(), 10) : null,
+          key:
+            musicalKey && musicalMode ? `${musicalKey} ${musicalMode}` : null,
         },
       };
 
@@ -149,13 +166,13 @@ export function EditTrackDialog({
   };
 
   return (
-    <>
+    <div>
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Edit Track</DialogTitle>
             <DialogDescription>
-              Update your track's metadata and customize its appearance.
+              Update your track&apos;s metadata and customize its appearance.
             </DialogDescription>
           </DialogHeader>
 
@@ -199,6 +216,46 @@ export function EditTrackDialog({
                 }
                 placeholder="120"
               />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="key">Key</Label>
+                <Select
+                  value={musicalKey || ""}
+                  onValueChange={(value) => setMusicalKey(value || null)}
+                >
+                  <SelectTrigger id="key">
+                    <SelectValue placeholder="Select key" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {MUSICAL_KEYS.map((key) => (
+                      <SelectItem key={key} value={key}>
+                        {key}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="mode">Mode/Scale</Label>
+                <Select
+                  value={musicalMode || ""}
+                  onValueChange={(value) => setMusicalMode(value || null)}
+                >
+                  <SelectTrigger id="mode">
+                    <SelectValue placeholder="Select mode" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {MUSICAL_MODES.map((mode) => (
+                      <SelectItem key={mode} value={mode}>
+                        {mode}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
 
             <div className="space-y-2">
@@ -277,6 +334,6 @@ export function EditTrackDialog({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </>
+    </div>
   );
 }

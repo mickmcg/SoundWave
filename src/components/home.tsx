@@ -312,6 +312,11 @@ const Home = () => {
                           {track.metadata.bpm} BPM
                         </Badge>
                       )}
+                      {track.metadata?.key && (
+                        <Badge variant="outline" className="text-xs">
+                          {track.metadata.key}
+                        </Badge>
+                      )}
                       {track.tags?.map((tag) => (
                         <Badge key={tag} variant="outline" className="text-xs">
                           {tag}

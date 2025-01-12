@@ -256,6 +256,11 @@ export const TrackPlayer = ({
                   {metadata?.bpm && (
                     <Badge variant="outline" className="text-xs">
                       {metadata.bpm} BPM
+                      {metadata.key && (
+                        <Badge variant="outline" className="ml-2 text-xs">
+                          {metadata.key}
+                        </Badge>
+                      )}
                     </Badge>
                   )}
                 </div>
