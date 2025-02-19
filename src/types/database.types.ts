@@ -14,6 +14,9 @@ export interface Track {
   created_at: string;
   updated_at: string;
   user_id: string;
+  buy_link?: string | null;
+  is_remix: boolean;
+  is_released: boolean;
   metadata?: {
     album?: string | null;
     year?: string | null;

@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import * as jsmediatags from "jsmediatags/dist/jsmediatags.min.js";
 import {
   Dialog,
@@ -9,9 +9,11 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { Upload, X, AlertCircle, ImagePlus } from "lucide-react";
+
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/AuthContext";
 import {
@@ -41,6 +43,7 @@ const MAX_COVER_SIZE = 1024 * 1024; // 1MB
 
 export function UploadDialog({ open, onOpenChange }: UploadDialogProps) {
   const [file, setFile] = useState<File | null>(null);
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [title, setTitle] = useState("");
   const [artist, setArtist] = useState("");
   const [genre, setGenre] = useState<string | null>(null);
@@ -49,6 +52,9 @@ export function UploadDialog({ open, onOpenChange }: UploadDialogProps) {
   const [musicalMode, setMusicalMode] = useState<string | null>(null);
   const [year, setYear] = useState<string | null>(null);
   const [album, setAlbum] = useState<string | null>(null);
+  const [buyLink, setBuyLink] = useState("");
+  const [isRemix, setIsRemix] = useState(false);
+  const [isReleased, setIsReleased] = useState(false);
   const [coverArt, setCoverArt] = useState<string | null>(null);
   const [coverArtFile, setCoverArtFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -57,7 +63,27 @@ export function UploadDialog({ open, onOpenChange }: UploadDialogProps) {
   const [error, setError] = useState("");
   const [analysisError, setAnalysisError] = useState("");
   const [isDragging, setIsDragging] = useState(false);
+  const [recentTags, setRecentTags] = useState<string[]>([]);
   const { user } = useAuth();
+
+  // Fetch recent tags
+  useEffect(() => {
+    const fetchRecentTags = async () => {
+      const { data } = await supabase
+        .from("tracks")
+        .select("tags")
+        .order("created_at", { ascending: false })
+        .limit(20);
+
+      if (data) {
+        const tags = data.flatMap((track) => track.tags || []).filter(Boolean);
+        const uniqueTags = Array.from(new Set(tags));
+        setRecentTags(uniqueTags.slice(0, 10)); // Keep only top 10 recent tags
+      }
+    };
+
+    fetchRecentTags();
+  }, []);
 
   const analyzeAudio = async (file: File) => {
     try {
@@ -68,13 +94,28 @@ export function UploadDialog({ open, onOpenChange }: UploadDialogProps) {
       const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
       const audioData = audioBuffer.getChannelData(0);
 
-      // Enhanced BPM detection
+      // Enhanced BPM detection with more debug info
       const sampleRate = audioBuffer.sampleRate;
+      console.log("Sample rate:", sampleRate);
+      console.log("Audio duration:", audioBuffer.duration);
+
       const bufferSize = 2048;
       const peaks = [];
       let threshold = 0.15;
       let prevPeak = 0;
       let minPeakDistance = sampleRate * 0.2;
+
+      // Calculate RMS to help set threshold
+      let rms = 0;
+      for (let i = 0; i < audioData.length; i++) {
+        rms += audioData[i] * audioData[i];
+      }
+      rms = Math.sqrt(rms / audioData.length);
+      console.log("RMS value:", rms);
+
+      // Adjust threshold based on RMS
+      threshold = Math.max(0.15, rms * 1.5);
+      console.log("Using threshold:", threshold);
 
       for (let i = 0; i < audioData.length; i += bufferSize) {
         const chunk = audioData.slice(i, i + bufferSize);
@@ -86,21 +127,55 @@ export function UploadDialog({ open, onOpenChange }: UploadDialogProps) {
         }
       }
 
+      console.log("Number of peaks found:", peaks.length);
+
       const intervals = peaks.slice(1).map((peak, i) => peak - peaks[i]);
+      console.log("Peak intervals:", intervals);
+
       const sortedIntervals = intervals.sort((a, b) => a - b);
+      console.log("Sorted intervals:", sortedIntervals);
+
+      // Take the middle 60% of intervals to avoid outliers
       const validIntervals = sortedIntervals.slice(
         Math.floor(sortedIntervals.length * 0.2),
         Math.floor(sortedIntervals.length * 0.8),
       );
+      console.log("Valid intervals:", validIntervals);
 
       const avgInterval =
         validIntervals.reduce((a, b) => a + b, 0) / validIntervals.length;
-      let estimatedBPM = Math.round(60 / avgInterval);
+      console.log("Average interval:", avgInterval);
 
-      // Always halve the BPM if it's above 150
+      let estimatedBPM = Math.round(60 / avgInterval);
+      console.log("Initial BPM estimate:", estimatedBPM);
+
+      // More intelligent BPM adjustment
+      let adjustedBPM = estimatedBPM;
+
+      // If BPM is too high, try to find a more reasonable multiple
       if (estimatedBPM > 150) {
-        estimatedBPM = Math.round(estimatedBPM / 2);
+        const possibleBPMs = [
+          estimatedBPM / 2,
+          estimatedBPM / 3,
+          estimatedBPM / 4,
+        ];
+
+        // Find the closest multiple that's in a reasonable range (70-150 BPM)
+        adjustedBPM =
+          possibleBPMs.find((bpm) => bpm >= 70 && bpm <= 150) ||
+          Math.round(estimatedBPM / 2);
       }
+
+      console.log("BPM adjustment:", {
+        original: estimatedBPM,
+        adjusted: adjustedBPM,
+        reason:
+          estimatedBPM !== adjustedBPM
+            ? "Too high, found better multiple"
+            : "No adjustment needed",
+      });
+
+      estimatedBPM = Math.round(adjustedBPM);
 
       console.log(
         "Analysis complete. Raw BPM:",
@@ -315,6 +390,14 @@ export function UploadDialog({ open, onOpenChange }: UploadDialogProps) {
     }
   };
 
+  const toggleTag = (tag: string) => {
+    setSelectedTags((current) =>
+      current.includes(tag)
+        ? current.filter((t) => t !== tag)
+        : [...current, tag],
+    );
+  };
+
   const handleUpload = async () => {
     if (!file || !user) return;
 
@@ -371,6 +454,9 @@ export function UploadDialog({ open, onOpenChange }: UploadDialogProps) {
         cover_art_url: coverArtUrl,
         duration: 0, // TODO: Get actual duration
         genre: genre,
+        buy_link: buyLink.trim() || null,
+        is_remix: isRemix,
+        is_released: isReleased,
         user_id: user.id,
         metadata: {
           bpm: bpm ? parseInt(bpm.toString(), 10) : null,
@@ -383,6 +469,19 @@ export function UploadDialog({ open, onOpenChange }: UploadDialogProps) {
 
       if (dbError) throw dbError;
 
+      // Reset all state variables after successful upload
+      setFile(null);
+      setTitle("");
+      setArtist("");
+      setGenre(null);
+      setBpm(null);
+      setMusicalKey(null);
+      setMusicalMode(null);
+      setYear(null);
+      setAlbum(null);
+      setCoverArt(null);
+      setCoverArtFile(null);
+      setProgress(0);
       onOpenChange(false);
     } catch (error) {
       console.error("Error uploading track:", error);
@@ -394,7 +493,7 @@ export function UploadDialog({ open, onOpenChange }: UploadDialogProps) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent className="max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Upload Track</DialogTitle>
           <DialogDescription>
@@ -576,6 +675,68 @@ export function UploadDialog({ open, onOpenChange }: UploadDialogProps) {
               </div>
 
               <div className="space-y-2">
+                <Label>Tags</Label>
+                <div className="flex flex-wrap gap-2 mb-2">
+                  {selectedTags.map((tag) => (
+                    <Badge
+                      key={tag}
+                      variant="default"
+                      className="cursor-pointer bg-orange-500 hover:bg-orange-600 flex items-center gap-1"
+                    >
+                      {tag}
+                      <X
+                        className="h-3 w-3"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedTags(
+                            selectedTags.filter((t) => t !== tag),
+                          );
+                        }}
+                      />
+                    </Badge>
+                  ))}
+                </div>
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="Add a tag..."
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && e.currentTarget.value) {
+                        e.preventDefault();
+                        const newTag = e.currentTarget.value
+                          .trim()
+                          .toLowerCase();
+                        if (newTag && !selectedTags.includes(newTag)) {
+                          setSelectedTags([...selectedTags, newTag]);
+                          e.currentTarget.value = "";
+                        }
+                      }
+                    }}
+                  />
+                </div>
+                <div className="flex flex-wrap gap-2 mt-2">
+                  {recentTags.length > 0 && (
+                    <>
+                      <p className="text-sm text-muted-foreground mb-1 w-full">
+                        Recent tags:
+                      </p>
+                      {recentTags.map((tag) => (
+                        <Badge
+                          key={tag}
+                          variant={
+                            selectedTags.includes(tag) ? "default" : "outline"
+                          }
+                          className="cursor-pointer"
+                          onClick={() => toggleTag(tag)}
+                        >
+                          {tag}
+                        </Badge>
+                      ))}
+                    </>
+                  )}
+                </div>
+              </div>
+
+              <div className="space-y-2">
                 <Label htmlFor="bpm">BPM {analyzing && "(Analyzing...)"}</Label>
                 <Input
                   id="bpm"
@@ -633,6 +794,41 @@ export function UploadDialog({ open, onOpenChange }: UploadDialogProps) {
                       ))}
                     </SelectContent>
                   </Select>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="buy-link">Buy Link</Label>
+                <Input
+                  id="buy-link"
+                  type="url"
+                  value={buyLink}
+                  onChange={(e) => setBuyLink(e.target.value)}
+                  placeholder="https://..."
+                />
+              </div>
+
+              <div className="flex gap-4">
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="is-remix"
+                    checked={isRemix}
+                    onCheckedChange={(checked) =>
+                      setIsRemix(checked as boolean)
+                    }
+                  />
+                  <Label htmlFor="is-remix">Remix</Label>
+                </div>
+
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="is-released"
+                    checked={isReleased}
+                    onCheckedChange={(checked) =>
+                      setIsReleased(checked as boolean)
+                    }
+                  />
+                  <Label htmlFor="is-released">Released</Label>
                 </div>
               </div>
 

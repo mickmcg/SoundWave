@@ -20,9 +20,10 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Trash2 } from "lucide-react";
+import { Trash2, X, ImagePlus } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import type { Track } from "@/types/database.types";
 import {
@@ -38,15 +39,6 @@ interface EditTrackDialogProps {
   onOpenChange: (open: boolean) => void;
   track: Track;
 }
-
-const COMMON_TAGS = [
-  "electronic",
-  "ambient",
-  "rock",
-  "jazz",
-  "classical",
-  "pop",
-];
 
 export function EditTrackDialog({
   open,
@@ -67,8 +59,31 @@ export function EditTrackDialog({
     track.metadata?.key?.split(" ").slice(1).join(" ") || null,
   );
   const [coverArtUrl, setCoverArtUrl] = useState(track.cover_art_url || "");
+  const [buyLink, setBuyLink] = useState(track.buy_link || "");
+  const [isRemix, setIsRemix] = useState(track.is_remix || false);
+  const [isReleased, setIsReleased] = useState(track.is_released || false);
   const [saving, setSaving] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [recentTags, setRecentTags] = useState<string[]>([]);
+
+  // Fetch recent tags
+  useEffect(() => {
+    const fetchRecentTags = async () => {
+      const { data } = await supabase
+        .from("tracks")
+        .select("tags")
+        .order("created_at", { ascending: false })
+        .limit(20);
+
+      if (data) {
+        const tags = data.flatMap((track) => track.tags || []).filter(Boolean);
+        const uniqueTags = Array.from(new Set(tags));
+        setRecentTags(uniqueTags.slice(0, 10)); // Keep only top 10 recent tags
+      }
+    };
+
+    fetchRecentTags();
+  }, []);
 
   // Update local state when track prop changes
   useEffect(() => {
@@ -91,6 +106,9 @@ export function EditTrackDialog({
         tags: selectedTags,
         genre: selectedGenre,
         cover_art_url: coverArtUrl.trim() || null,
+        buy_link: buyLink.trim() || null,
+        is_remix: isRemix,
+        is_released: isReleased,
         updated_at: new Date().toISOString(),
         metadata: {
           ...track.metadata,
@@ -168,7 +186,7 @@ export function EditTrackDialog({
   return (
     <div>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent>
+        <DialogContent className="max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Edit Track</DialogTitle>
             <DialogDescription>
@@ -196,13 +214,86 @@ export function EditTrackDialog({
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="coverArt">Cover Art URL</Label>
-              <Input
-                id="coverArt"
-                value={coverArtUrl}
-                onChange={(e) => setCoverArtUrl(e.target.value)}
-                placeholder="https://example.com/image.jpg"
-              />
+              <Label>Cover Art</Label>
+              <div className="flex items-start gap-4">
+                {coverArtUrl ? (
+                  <div className="relative group">
+                    <img
+                      src={coverArtUrl}
+                      alt="Cover Art Preview"
+                      className="w-32 h-32 object-cover rounded-lg"
+                      onError={(e) => {
+                        e.currentTarget.src =
+                          "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=128&h=128&fit=crop";
+                      }}
+                    />
+                    <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/50 rounded-lg">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-white"
+                        onClick={() => setCoverArtUrl("")}
+                      >
+                        Remove
+                      </Button>
+                    </div>
+                  </div>
+                ) : null}
+                <label className="flex-1">
+                  <input
+                    type="file"
+                    accept=".jpg,.jpeg,.png"
+                    className="hidden"
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (file) {
+                        // Validate file type
+                        const fileType = file.type.toLowerCase();
+                        if (
+                          !fileType.startsWith("image/jpeg") &&
+                          !fileType.startsWith("image/png")
+                        ) {
+                          return;
+                        }
+
+                        // Validate file size (1MB)
+                        if (file.size > 1024 * 1024) {
+                          return;
+                        }
+
+                        try {
+                          // Upload the new cover art
+                          const coverFileName = `covers/${Date.now()}-${file.name}`;
+                          const { error: coverUploadError } =
+                            await supabase.storage
+                              .from("tracks")
+                              .upload(coverFileName, file, {
+                                cacheControl: "3600",
+                                upsert: false,
+                              });
+
+                          if (coverUploadError) throw coverUploadError;
+
+                          // Get the public URL
+                          const {
+                            data: { publicUrl },
+                          } = supabase.storage
+                            .from("tracks")
+                            .getPublicUrl(coverFileName);
+
+                          setCoverArtUrl(publicUrl);
+                        } catch (error) {
+                          console.error("Error uploading cover art:", error);
+                        }
+                      }
+                    }}
+                  />
+                  <Button variant="outline" className="w-full" type="button">
+                    <ImagePlus className="w-4 h-4 mr-2" />
+                    {coverArtUrl ? "Change Cover Art" : "Add Cover Art"}
+                  </Button>
+                </label>
+              </div>
             </div>
 
             <div className="space-y-2">
@@ -259,6 +350,39 @@ export function EditTrackDialog({
             </div>
 
             <div className="space-y-2">
+              <Label htmlFor="buy-link">Buy Link</Label>
+              <Input
+                id="buy-link"
+                type="url"
+                value={buyLink}
+                onChange={(e) => setBuyLink(e.target.value)}
+                placeholder="https://..."
+              />
+            </div>
+
+            <div className="flex gap-4">
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="is-remix"
+                  checked={isRemix}
+                  onCheckedChange={(checked) => setIsRemix(checked as boolean)}
+                />
+                <Label htmlFor="is-remix">Remix</Label>
+              </div>
+
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="is-released"
+                  checked={isReleased}
+                  onCheckedChange={(checked) =>
+                    setIsReleased(checked as boolean)
+                  }
+                />
+                <Label htmlFor="is-released">Released</Label>
+              </div>
+            </div>
+
+            <div className="space-y-2">
               <Label>Genre</Label>
               <div className="flex flex-wrap gap-2">
                 {MUSIC_GENRES.map((genre) => (
@@ -278,17 +402,59 @@ export function EditTrackDialog({
 
             <div className="space-y-2">
               <Label>Tags</Label>
-              <div className="flex flex-wrap gap-2">
-                {COMMON_TAGS.map((tag) => (
+              <div className="flex flex-wrap gap-2 mb-2">
+                {selectedTags.map((tag) => (
                   <Badge
                     key={tag}
-                    variant={selectedTags.includes(tag) ? "default" : "outline"}
-                    className="cursor-pointer"
-                    onClick={() => toggleTag(tag)}
+                    variant="default"
+                    className="cursor-pointer bg-orange-500 hover:bg-orange-600 flex items-center gap-1"
                   >
                     {tag}
+                    <X
+                      className="h-3 w-3"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedTags(selectedTags.filter((t) => t !== tag));
+                      }}
+                    />
                   </Badge>
                 ))}
+              </div>
+              <div className="flex gap-2">
+                <Input
+                  placeholder="Add a tag..."
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && e.currentTarget.value) {
+                      e.preventDefault();
+                      const newTag = e.currentTarget.value.trim().toLowerCase();
+                      if (newTag && !selectedTags.includes(newTag)) {
+                        setSelectedTags([...selectedTags, newTag]);
+                        e.currentTarget.value = "";
+                      }
+                    }
+                  }}
+                />
+              </div>
+              <div className="flex flex-wrap gap-2 mt-2">
+                {recentTags.length > 0 && (
+                  <>
+                    <p className="text-sm text-muted-foreground mb-1 w-full">
+                      Recent tags:
+                    </p>
+                    {recentTags.map((tag) => (
+                      <Badge
+                        key={tag}
+                        variant={
+                          selectedTags.includes(tag) ? "default" : "outline"
+                        }
+                        className="cursor-pointer"
+                        onClick={() => toggleTag(tag)}
+                      >
+                        {tag}
+                      </Badge>
+                    ))}
+                  </>
+                )}
               </div>
             </div>
           </div>

@@ -9,7 +9,7 @@ import type { Track } from "@/types/database.types";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { EditTrackDialog } from "./track/EditTrackDialog";
-import { Heart, Play, Share2, Filter } from "lucide-react";
+import { Heart, Play, Share2, Filter, Edit, ShoppingCart } from "lucide-react";
 import { AuthDialog } from "./auth/AuthDialog";
 import { useToast } from "@/components/ui/use-toast";
 
@@ -17,238 +17,61 @@ const Home = () => {
   const [tracks, setTracks] = useState<Track[]>([]);
   const [selectedTrack, setSelectedTrack] = useState<Track | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [likedTracks, setLikedTracks] = useState<string[]>([]);
   const [editingTrack, setEditingTrack] = useState<Track | null>(null);
-  const [showFilters, setShowFilters] = useState(false);
   const [showAuthDialog, setShowAuthDialog] = useState(false);
+  const [likedTracks, setLikedTracks] = useState<string[]>([]);
+  const [showFilters, setShowFilters] = useState(false);
+  const spacebarRef = useRef<boolean>(false);
+  const { toast } = useToast();
+  const { user } = useAuth();
   const {
     searchQuery,
+    selectedArtist,
     selectedTags,
     selectedGenre,
+    selectedKey,
+    selectedMode,
     durationRange,
     bpmRange,
     dateRange,
+    isRemix,
+    isReleased,
     clearFilters,
   } = useSearch();
-  const { user } = useAuth();
-  const { toast } = useToast();
-
-  // Refs to track current state without triggering effect reruns
-  const selectedTrackRef = useRef<string | null>(null);
-  const editingTrackRef = useRef<string | null>(null);
-
-  // Update refs when state changes
-  useEffect(() => {
-    selectedTrackRef.current = selectedTrack?.id || null;
-  }, [selectedTrack]);
 
   useEffect(() => {
-    editingTrackRef.current = editingTrack?.id || null;
-  }, [editingTrack]);
-
-  // Add keyboard controls
-  useEffect(() => {
-    const handleKeyPress = (e: KeyboardEvent) => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ignore if user is typing in an input or textarea
       if (
         e.target instanceof HTMLInputElement ||
         e.target instanceof HTMLTextAreaElement
       ) {
         return;
       }
-      if (e.code === "Space" && selectedTrack) {
+
+      if (e.code === "Space" && !spacebarRef.current) {
         e.preventDefault();
-        setIsPlaying(!isPlaying);
-      }
-    };
-    window.addEventListener("keydown", handleKeyPress);
-    return () => window.removeEventListener("keydown", handleKeyPress);
-  }, [isPlaying, selectedTrack]);
-
-  // Initial tracks fetch
-  useEffect(() => {
-    const fetchTracks = async () => {
-      const { data, error } = await supabase
-        .from("tracks")
-        .select("*")
-        .order("created_at", { ascending: false });
-
-      if (error) {
-        console.error("Error fetching tracks:", error);
-        return;
-      }
-
-      setTracks(data);
-      if (data.length > 0 && !selectedTrack) {
-        setSelectedTrack(data[0]);
+        spacebarRef.current = true;
+        if (selectedTrack) {
+          setIsPlaying(!isPlaying);
+        }
       }
     };
 
-    fetchTracks();
-  }, []);
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.code === "Space") {
+        spacebarRef.current = false;
+      }
+    };
 
-  // Track changes subscription
-  useEffect(() => {
-    console.log("Setting up realtime subscription...");
-    const channel = supabase
-      .channel("tracks_channel")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "tracks" },
-        (payload: any) => {
-          console.log("Track change received:", payload);
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("keyup", handleKeyUp);
 
-          if (payload.eventType === "INSERT") {
-            const newTrack = payload.new as Track;
-            console.log("Track inserted:", newTrack);
-            setTracks((current) => [newTrack, ...current]);
-            if (!selectedTrackRef.current) {
-              setSelectedTrack(newTrack);
-            }
-          } else if (payload.eventType === "UPDATE") {
-            const updatedTrack = payload.new as Track;
-            console.log("Track updated:", updatedTrack);
-
-            // Update tracks list
-            setTracks((current) => {
-              const newTracks = current.map((track) =>
-                track.id === updatedTrack.id ? updatedTrack : track,
-              );
-              console.log("Updated tracks:", newTracks);
-              return newTracks;
-            });
-
-            // Update selected track if it's the one being edited
-            if (selectedTrackRef.current === updatedTrack.id) {
-              console.log("Updating selected track");
-              setSelectedTrack(updatedTrack);
-            }
-
-            // Close edit dialog if this track was being edited
-            if (editingTrackRef.current === updatedTrack.id) {
-              console.log("Closing edit dialog");
-              setEditingTrack(null);
-            }
-          } else if (payload.eventType === "DELETE") {
-            const deletedTrackId = payload.old.id;
-            console.log("Track deleted:", deletedTrackId);
-            setTracks((current) =>
-              current.filter((track) => track.id !== deletedTrackId),
-            );
-            if (selectedTrackRef.current === deletedTrackId) {
-              setSelectedTrack(null);
-            }
-            if (editingTrackRef.current === deletedTrackId) {
-              setEditingTrack(null);
-            }
-          }
-        },
-      )
-      .subscribe();
-
-    console.log("Subscription set up successfully");
     return () => {
-      channel.unsubscribe();
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keyup", handleKeyUp);
     };
-  }, []); // Empty dependency array since we're using refs
-
-  // Filter tracks based on search criteria
-  const filteredTracks = useMemo(() => {
-    return tracks.filter((track) => {
-      // Text search
-      if (
-        searchQuery &&
-        !track.title.toLowerCase().includes(searchQuery.toLowerCase()) &&
-        !track.artist.toLowerCase().includes(searchQuery.toLowerCase())
-      ) {
-        return false;
-      }
-
-      // Tags
-      if (
-        selectedTags.length > 0 &&
-        !selectedTags.every((tag) => track.tags?.includes(tag))
-      ) {
-        return false;
-      }
-
-      // Genre
-      if (selectedGenre && track.genre !== selectedGenre) {
-        return false;
-      }
-
-      // Duration
-      if (
-        track.duration < durationRange[0] ||
-        track.duration > durationRange[1]
-      ) {
-        return false;
-      }
-
-      // BPM
-      if (
-        track.metadata?.bpm &&
-        (track.metadata.bpm < bpmRange[0] || track.metadata.bpm > bpmRange[1])
-      ) {
-        return false;
-      }
-
-      // Date range
-      if (dateRange[0] || dateRange[1]) {
-        const trackDate = new Date(track.created_at);
-        if (dateRange[0] && trackDate < dateRange[0]) return false;
-        if (dateRange[1] && trackDate > dateRange[1]) return false;
-      }
-
-      return true;
-    });
-  }, [
-    tracks,
-    searchQuery,
-    selectedTags,
-    selectedGenre,
-    durationRange,
-    bpmRange,
-    dateRange,
-  ]);
-
-  const handleTrackSelect = (track: Track) => {
-    setSelectedTrack(track);
-    setIsPlaying(true);
-  };
-
-  const handleLike = async (e: React.MouseEvent, track: Track) => {
-    e.stopPropagation();
-    if (!user) {
-      setShowAuthDialog(true);
-      return;
-    }
-
-    try {
-      if (likedTracks.includes(track.id)) {
-        await supabase
-          .from("track_likes")
-          .delete()
-          .match({ track_id: track.id, user_id: user.id });
-        setLikedTracks(likedTracks.filter((id) => id !== track.id));
-      } else {
-        await supabase
-          .from("track_likes")
-          .insert({ track_id: track.id, user_id: user.id });
-        setLikedTracks([...likedTracks, track.id]);
-      }
-    } catch (error) {
-      console.error("Error toggling like:", error);
-    }
-  };
-
-  const handleCopyLink = (e: React.MouseEvent, track: Track) => {
-    e.stopPropagation();
-    const url = `${window.location.origin}/?track=${track.id}`;
-    navigator.clipboard.writeText(url);
-    toast({
-      description: "Track link copied to clipboard",
-    });
-  };
+  }, [selectedTrack, isPlaying]);
 
   const renderContent = () => {
     if (tracks.length === 0) {
@@ -286,8 +109,12 @@ const Home = () => {
               <img
                 src={
                   track.cover_art_url ||
-                  "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=50&h=50&fit=crop"
+                  "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=50&h=50&fit=crop&auto=format"
                 }
+                onError={(e) => {
+                  e.currentTarget.src =
+                    "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=50&h=50&fit=crop&auto=format";
+                }}
                 alt={track.title}
                 className="w-12 h-12 rounded object-cover"
               />
@@ -326,6 +153,19 @@ const Home = () => {
                   </div>
                   <div className="flex items-center gap-4">
                     <div className="flex items-center gap-4 text-muted-foreground">
+                      {track.buy_link && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-muted-foreground hover:text-foreground"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            window.open(track.buy_link, "_blank");
+                          }}
+                        >
+                          <ShoppingCart className="h-4 w-4" />
+                        </Button>
+                      )}
                       <div className="flex items-center gap-1">
                         <Play className="h-4 w-4" />
                         <span className="text-sm">{track.plays || 0}</span>
@@ -350,19 +190,17 @@ const Home = () => {
                     >
                       <Share2 className="h-4 w-4" />
                     </Button>
-                    {user && track.user_id === user.id && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="text-orange-500 hover:text-orange-600"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setEditingTrack(track);
-                        }}
-                      >
-                        Edit Track
-                      </Button>
-                    )}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-muted-foreground hover:text-foreground"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setEditingTrack(track);
+                      }}
+                    >
+                      <Edit className="h-4 w-4" />
+                    </Button>
                   </div>
                 </div>
               </div>
@@ -373,49 +211,271 @@ const Home = () => {
     );
   };
 
+  useEffect(() => {
+    const fetchTracks = async () => {
+      const { data } = await supabase
+        .from("tracks")
+        .select("*")
+        .order("created_at", { ascending: false });
+      setTracks(data || []);
+    };
+
+    fetchTracks();
+
+    // Subscribe to changes
+    const channel = supabase
+      .channel("tracks")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "tracks" },
+        () => fetchTracks(),
+      )
+      .subscribe();
+
+    return () => {
+      channel.unsubscribe();
+    };
+  }, []);
+
+  // Fetch liked tracks
+  useEffect(() => {
+    if (!user) {
+      setLikedTracks([]);
+      return;
+    }
+
+    const fetchLikedTracks = async () => {
+      const { data } = await supabase
+        .from("track_likes")
+        .select("track_id")
+        .eq("user_id", user.id);
+
+      setLikedTracks((data || []).map((like) => like.track_id));
+    };
+
+    fetchLikedTracks();
+
+    // Subscribe to changes
+    const channel = supabase
+      .channel(`track_likes:${user.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "track_likes",
+          filter: `user_id=eq.${user.id}`,
+        },
+        () => fetchLikedTracks(),
+      )
+      .subscribe();
+
+    return () => {
+      channel.unsubscribe();
+    };
+  }, [user]);
+
+  const handleTrackSelect = (track: Track) => {
+    if (track.id === selectedTrack?.id) {
+      // Toggle play/pause if clicking the same track
+      setIsPlaying(!isPlaying);
+    } else {
+      // Play new track immediately when selected
+      setSelectedTrack(track);
+      setIsPlaying(true);
+    }
+  };
+
+  const handleLike = async (e: React.MouseEvent, track: Track) => {
+    e.stopPropagation();
+
+    if (!user) {
+      setShowAuthDialog(true);
+      return;
+    }
+
+    try {
+      if (likedTracks.includes(track.id)) {
+        await supabase
+          .from("track_likes")
+          .delete()
+          .match({ track_id: track.id, user_id: user.id });
+      } else {
+        await supabase
+          .from("track_likes")
+          .insert({ track_id: track.id, user_id: user.id });
+      }
+    } catch (error) {
+      console.error("Error toggling like:", error);
+    }
+  };
+
+  const handleCopyLink = (e: React.MouseEvent, track: Track) => {
+    e.stopPropagation();
+    const url = `${window.location.origin}/?track=${track.id}`;
+    navigator.clipboard.writeText(url);
+    toast({
+      description: "Link copied to clipboard",
+    });
+  };
+
+  const filteredTracks = useMemo(() => {
+    return tracks.filter((track) => {
+      // Search query
+      if (
+        searchQuery &&
+        !track.title.toLowerCase().includes(searchQuery.toLowerCase()) &&
+        !track.artist.toLowerCase().includes(searchQuery.toLowerCase())
+      ) {
+        return false;
+      }
+
+      // Artist
+      if (selectedArtist === "not-set") {
+        if (track.artist) return false;
+      } else if (selectedArtist && track.artist !== selectedArtist) {
+        return false;
+      }
+
+      // Genre
+      if (selectedGenre === "not-set") {
+        if (track.genre) return false;
+      } else if (selectedGenre && track.genre !== selectedGenre) {
+        return false;
+      }
+
+      // Tags
+      if (selectedTags.includes("not-set")) {
+        if (track.tags && track.tags.length > 0) return false;
+      } else if (
+        selectedTags.length > 0 &&
+        !selectedTags.every((tag) => track.tags?.includes(tag))
+      ) {
+        return false;
+      }
+
+      // Musical Key
+      if (selectedKey === "not-set") {
+        if (track.metadata?.key) return false;
+      } else if (
+        selectedKey &&
+        (!track.metadata?.key || !track.metadata.key.startsWith(selectedKey))
+      ) {
+        return false;
+      }
+
+      // Musical Mode
+      if (selectedMode === "not-set") {
+        if (track.metadata?.key) return false;
+      } else if (
+        selectedMode &&
+        (!track.metadata?.key || !track.metadata.key.includes(selectedMode))
+      ) {
+        return false;
+      }
+
+      // BPM Range
+      if (
+        track.metadata?.bpm &&
+        (track.metadata.bpm < bpmRange[0] || track.metadata.bpm > bpmRange[1])
+      ) {
+        return false;
+      }
+
+      // Duration Range
+      if (
+        track.duration &&
+        (track.duration < durationRange[0] || track.duration > durationRange[1])
+      ) {
+        return false;
+      }
+
+      // Remix Status
+      if (isRemix !== null && track.is_remix !== isRemix) {
+        return false;
+      }
+
+      // Released Status
+      if (isReleased !== null && track.is_released !== isReleased) {
+        return false;
+      }
+
+      // Date Range
+      if (dateRange[0] || dateRange[1]) {
+        const trackDate = new Date(track.created_at);
+        if (
+          (dateRange[0] && trackDate < dateRange[0]) ||
+          (dateRange[1] && trackDate > dateRange[1])
+        ) {
+          return false;
+        }
+      }
+
+      return true;
+    });
+  }, [
+    tracks,
+    searchQuery,
+    selectedArtist,
+    selectedGenre,
+    selectedTags,
+    selectedKey,
+    selectedMode,
+    bpmRange,
+    durationRange,
+    dateRange,
+    isRemix,
+    isReleased,
+  ]);
+
   return (
-    <div className="flex flex-col h-screen bg-background text-foreground">
+    <div className="min-h-screen bg-background">
       <Header />
-      <div className="flex-1 overflow-auto p-6">
-        <div className="max-w-[1512px] mx-auto">
-          <div className="mb-4 md:hidden">
-            <Button
-              variant="outline"
-              onClick={() => setShowFilters(!showFilters)}
-              className="w-full"
-            >
-              <Filter className="mr-2 h-4 w-4" />
-              {showFilters ? "Hide Filters" : "Show Filters"}
-            </Button>
+
+      <main className="container mx-auto px-4 py-8">
+        <div className="flex gap-6">
+          <div className="w-64 hidden md:block">
+            <SearchFilters tracks={tracks} />
           </div>
-          <div className="grid md:grid-cols-[250px,1fr] gap-6">
-            <div className={`${!showFilters ? "hidden" : ""} md:block`}>
-              <SearchFilters />
+
+          <div className="flex-1 space-y-6">
+            <div className="md:hidden">
+              <Button
+                variant="outline"
+                className="w-full"
+                onClick={() => setShowFilters(!showFilters)}
+              >
+                <Filter className="mr-2 h-4 w-4" />
+                {showFilters ? "Hide Filters" : "Show Filters"}
+              </Button>
+
+              {showFilters && (
+                <div className="mt-4">
+                  <SearchFilters tracks={tracks} />
+                </div>
+              )}
             </div>
-            <div className="space-y-4">{renderContent()}</div>
+
+            {renderContent()}
           </div>
         </div>
-      </div>
+      </main>
 
       {selectedTrack && (
-        <div className="border-t bg-card">
-          <div className="max-w-[1512px] mx-auto">
-            <TrackPlayer
-              trackTitle={selectedTrack.title}
-              artistName={selectedTrack.artist}
-              coverArt={selectedTrack.cover_art_url || undefined}
-              genre={selectedTrack.genre}
-              trackId={selectedTrack.id}
-              audioUrl={selectedTrack.audio_url}
-              isPlaying={isPlaying}
-              plays={selectedTrack.plays}
-              likes={selectedTrack.likes}
-              isLiked={likedTracks.includes(selectedTrack.id)}
-              onPlayingChange={setIsPlaying}
-              metadata={selectedTrack.metadata}
-            />
-          </div>
-        </div>
+        <TrackPlayer
+          trackTitle={selectedTrack.title}
+          artistName={selectedTrack.artist}
+          coverArt={selectedTrack.cover_art_url}
+          trackId={selectedTrack.id}
+          audioUrl={selectedTrack.audio_url}
+          genre={selectedTrack.genre}
+          metadata={selectedTrack.metadata}
+          plays={selectedTrack.plays}
+          likes={selectedTrack.likes}
+          isLiked={likedTracks.includes(selectedTrack.id)}
+          isPlaying={isPlaying}
+          onPlayingChange={setIsPlaying}
+        />
       )}
 
       {editingTrack && (

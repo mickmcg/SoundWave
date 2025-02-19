@@ -1,5 +1,6 @@
 import { Badge } from "@/components/ui/badge";
-import { MUSIC_GENRES } from "@/lib/constants";
+import { MUSICAL_KEYS, MUSICAL_MODES } from "@/lib/constants";
+import type { Track } from "@/types/database.types";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import {
@@ -23,17 +24,18 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 
-const COMMON_TAGS = [
-  "electronic",
-  "ambient",
-  "rock",
-  "jazz",
-  "classical",
-  "pop",
-];
+interface SearchFiltersProps {
+  tracks: Track[];
+}
 
-export function SearchFilters() {
+export function SearchFilters({ tracks }: SearchFiltersProps) {
   const {
+    isRemix,
+    setIsRemix,
+    isReleased,
+    setIsReleased,
+    selectedArtist,
+    setSelectedArtist,
     selectedTags,
     setSelectedTags,
     selectedGenre,
@@ -42,6 +44,10 @@ export function SearchFilters() {
     setDurationRange,
     bpmRange,
     setBpmRange,
+    selectedKey,
+    setSelectedKey,
+    selectedMode,
+    setSelectedMode,
     dateRange,
     setDateRange,
     clearFilters,
@@ -58,15 +64,97 @@ export function SearchFilters() {
   const hasActiveFilters =
     selectedTags.length > 0 ||
     selectedGenre !== null ||
+    selectedKey !== null ||
+    selectedMode !== null ||
     durationRange[0] !== 0 ||
     durationRange[1] !== 600 ||
     bpmRange[0] !== 0 ||
     bpmRange[1] !== 200 ||
     dateRange[0] ||
-    dateRange[1];
+    dateRange[1] ||
+    isRemix !== null ||
+    isReleased !== null;
 
   return (
     <div className="space-y-4 p-4 bg-card rounded-lg">
+      {/* Artist */}
+      <Collapsible>
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-medium">Artist</h3>
+          <CollapsibleTrigger asChild>
+            <Button variant="ghost" size="sm" className="p-0 h-auto">
+              <ChevronDown className="h-4 w-4" />
+            </Button>
+          </CollapsibleTrigger>
+        </div>
+        <CollapsibleContent className="mt-2">
+          <div className="flex flex-wrap gap-2">
+            {/* Not set option for Artist */}
+            <Badge
+              variant={selectedArtist === "not-set" ? "default" : "outline"}
+              className={cn(
+                "cursor-pointer flex items-center gap-2",
+                selectedArtist === "not-set"
+                  ? "bg-orange-500 hover:bg-orange-600 text-white"
+                  : "hover:bg-muted",
+              )}
+              onClick={() =>
+                setSelectedArtist(
+                  selectedArtist === "not-set" ? null : "not-set",
+                )
+              }
+            >
+              <span>Not set</span>
+              <span
+                className={cn(
+                  "px-1.5 py-0.5 rounded-full text-xs",
+                  selectedArtist === "not-set"
+                    ? "bg-white/20"
+                    : "bg-muted-foreground/20",
+                )}
+              >
+                {tracks.filter((track) => !track.artist).length}
+              </span>
+            </Badge>
+
+            {Array.from(
+              new Set(tracks.map((track) => track.artist).filter(Boolean)),
+            ).map((artist) => {
+              const count = tracks.filter(
+                (track) => track.artist === artist,
+              ).length;
+              return (
+                <Badge
+                  key={artist}
+                  variant={selectedArtist === artist ? "default" : "outline"}
+                  className={cn(
+                    "cursor-pointer flex items-center gap-2",
+                    selectedArtist === artist
+                      ? "bg-orange-500 hover:bg-orange-600 text-white"
+                      : "hover:bg-muted",
+                  )}
+                  onClick={() =>
+                    setSelectedArtist(selectedArtist === artist ? null : artist)
+                  }
+                >
+                  <span>{artist}</span>
+                  <span
+                    className={cn(
+                      "px-1.5 py-0.5 rounded-full text-xs",
+                      selectedArtist === artist
+                        ? "bg-white/20"
+                        : "bg-muted-foreground/20",
+                    )}
+                  >
+                    {count}
+                  </span>
+                </Badge>
+              );
+            })}
+          </div>
+        </CollapsibleContent>
+      </Collapsible>
+
       {/* Genre */}
       <Collapsible>
         <div className="flex items-center justify-between">
@@ -79,23 +167,66 @@ export function SearchFilters() {
         </div>
         <CollapsibleContent className="mt-2">
           <div className="flex flex-wrap gap-2">
-            {MUSIC_GENRES.map((genre) => (
-              <Badge
-                key={genre}
-                variant={selectedGenre === genre ? "default" : "outline"}
+            {/* Not set option for Genre */}
+            <Badge
+              variant={selectedGenre === "not-set" ? "default" : "outline"}
+              className={cn(
+                "cursor-pointer flex items-center gap-2",
+                selectedGenre === "not-set"
+                  ? "bg-orange-500 hover:bg-orange-600 text-white"
+                  : "hover:bg-muted",
+              )}
+              onClick={() =>
+                setSelectedGenre(selectedGenre === "not-set" ? null : "not-set")
+              }
+            >
+              <span>Not set</span>
+              <span
                 className={cn(
-                  "cursor-pointer",
-                  selectedGenre === genre
-                    ? "bg-orange-500 hover:bg-orange-600 text-white"
-                    : "hover:bg-muted",
+                  "px-1.5 py-0.5 rounded-full text-xs",
+                  selectedGenre === "not-set"
+                    ? "bg-white/20"
+                    : "bg-muted-foreground/20",
                 )}
-                onClick={() =>
-                  setSelectedGenre(selectedGenre === genre ? null : genre)
-                }
               >
-                {genre}
-              </Badge>
-            ))}
+                {tracks.filter((track) => !track.genre).length}
+              </span>
+            </Badge>
+
+            {Array.from(
+              new Set(tracks.map((track) => track.genre).filter(Boolean)),
+            ).map((genre) => {
+              const count = tracks.filter(
+                (track) => track.genre === genre,
+              ).length;
+              return (
+                <Badge
+                  key={genre}
+                  variant={selectedGenre === genre ? "default" : "outline"}
+                  className={cn(
+                    "cursor-pointer flex items-center gap-2",
+                    selectedGenre === genre
+                      ? "bg-orange-500 hover:bg-orange-600 text-white"
+                      : "hover:bg-muted",
+                  )}
+                  onClick={() =>
+                    setSelectedGenre(selectedGenre === genre ? null : genre)
+                  }
+                >
+                  <span>{genre}</span>
+                  <span
+                    className={cn(
+                      "px-1.5 py-0.5 rounded-full text-xs",
+                      selectedGenre === genre
+                        ? "bg-white/20"
+                        : "bg-muted-foreground/20",
+                    )}
+                  >
+                    {count}
+                  </span>
+                </Badge>
+              );
+            })}
           </div>
         </CollapsibleContent>
       </Collapsible>
@@ -112,21 +243,66 @@ export function SearchFilters() {
         </div>
         <CollapsibleContent className="mt-2">
           <div className="flex flex-wrap gap-2">
-            {COMMON_TAGS.map((tag) => (
-              <Badge
-                key={tag}
-                variant={selectedTags.includes(tag) ? "default" : "outline"}
+            {/* Not set option for Tags */}
+            <Badge
+              variant={selectedTags.includes("not-set") ? "default" : "outline"}
+              className={cn(
+                "cursor-pointer flex items-center gap-2",
+                selectedTags.includes("not-set")
+                  ? "bg-orange-500 hover:bg-orange-600 text-white"
+                  : "hover:bg-muted",
+              )}
+              onClick={() => toggleTag("not-set")}
+            >
+              <span>Not set</span>
+              <span
                 className={cn(
-                  "cursor-pointer",
-                  selectedTags.includes(tag)
-                    ? "bg-orange-500 hover:bg-orange-600 text-white"
-                    : "hover:bg-muted",
+                  "px-1.5 py-0.5 rounded-full text-xs",
+                  selectedTags.includes("not-set")
+                    ? "bg-white/20"
+                    : "bg-muted-foreground/20",
                 )}
-                onClick={() => toggleTag(tag)}
               >
-                {tag}
-              </Badge>
-            ))}
+                {
+                  tracks.filter(
+                    (track) => !track.tags || track.tags.length === 0,
+                  ).length
+                }
+              </span>
+            </Badge>
+
+            {Array.from(
+              new Set(tracks.flatMap((track) => track.tags || [])),
+            ).map((tag) => {
+              const count = tracks.filter((track) =>
+                track.tags?.includes(tag),
+              ).length;
+              return (
+                <Badge
+                  key={tag}
+                  variant={selectedTags.includes(tag) ? "default" : "outline"}
+                  className={cn(
+                    "cursor-pointer flex items-center gap-2",
+                    selectedTags.includes(tag)
+                      ? "bg-orange-500 hover:bg-orange-600 text-white"
+                      : "hover:bg-muted",
+                  )}
+                  onClick={() => toggleTag(tag)}
+                >
+                  <span>{tag}</span>
+                  <span
+                    className={cn(
+                      "px-1.5 py-0.5 rounded-full text-xs",
+                      selectedTags.includes(tag)
+                        ? "bg-white/20"
+                        : "bg-muted-foreground/20",
+                    )}
+                  >
+                    {count}
+                  </span>
+                </Badge>
+              );
+            })}
           </div>
         </CollapsibleContent>
       </Collapsible>
@@ -167,6 +343,156 @@ export function SearchFilters() {
         />
       </div>
 
+      {/* Musical Key */}
+      <Collapsible>
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-medium">Musical Key</h3>
+          <CollapsibleTrigger asChild>
+            <Button variant="ghost" size="sm" className="p-0 h-auto">
+              <ChevronDown className="h-4 w-4" />
+            </Button>
+          </CollapsibleTrigger>
+        </div>
+        <CollapsibleContent className="mt-2">
+          <div className="flex flex-wrap gap-2">
+            {/* Not set option for Key */}
+            <Badge
+              variant={selectedKey === "not-set" ? "default" : "outline"}
+              className={cn(
+                "cursor-pointer flex items-center gap-2",
+                selectedKey === "not-set"
+                  ? "bg-orange-500 hover:bg-orange-600 text-white"
+                  : "hover:bg-muted",
+              )}
+              onClick={() =>
+                setSelectedKey(selectedKey === "not-set" ? null : "not-set")
+              }
+            >
+              <span>Not set</span>
+              <span
+                className={cn(
+                  "px-1.5 py-0.5 rounded-full text-xs",
+                  selectedKey === "not-set"
+                    ? "bg-white/20"
+                    : "bg-muted-foreground/20",
+                )}
+              >
+                {tracks.filter((track) => !track.metadata?.key).length}
+              </span>
+            </Badge>
+
+            {MUSICAL_KEYS.map((key) => {
+              const count = tracks.filter((track) =>
+                track.metadata?.key?.startsWith(key),
+              ).length;
+              if (count === 0) return null;
+              return (
+                <Badge
+                  key={key}
+                  variant={selectedKey === key ? "default" : "outline"}
+                  className={cn(
+                    "cursor-pointer flex items-center gap-2",
+                    selectedKey === key
+                      ? "bg-orange-500 hover:bg-orange-600 text-white"
+                      : "hover:bg-muted",
+                  )}
+                  onClick={() =>
+                    setSelectedKey(selectedKey === key ? null : key)
+                  }
+                >
+                  <span>{key}</span>
+                  <span
+                    className={cn(
+                      "px-1.5 py-0.5 rounded-full text-xs",
+                      selectedKey === key
+                        ? "bg-white/20"
+                        : "bg-muted-foreground/20",
+                    )}
+                  >
+                    {count}
+                  </span>
+                </Badge>
+              );
+            })}
+          </div>
+        </CollapsibleContent>
+      </Collapsible>
+
+      {/* Musical Mode */}
+      <Collapsible>
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-medium">Musical Mode</h3>
+          <CollapsibleTrigger asChild>
+            <Button variant="ghost" size="sm" className="p-0 h-auto">
+              <ChevronDown className="h-4 w-4" />
+            </Button>
+          </CollapsibleTrigger>
+        </div>
+        <CollapsibleContent className="mt-2">
+          <div className="flex flex-wrap gap-2">
+            {/* Not set option for Mode */}
+            <Badge
+              variant={selectedMode === "not-set" ? "default" : "outline"}
+              className={cn(
+                "cursor-pointer flex items-center gap-2",
+                selectedMode === "not-set"
+                  ? "bg-orange-500 hover:bg-orange-600 text-white"
+                  : "hover:bg-muted",
+              )}
+              onClick={() =>
+                setSelectedMode(selectedMode === "not-set" ? null : "not-set")
+              }
+            >
+              <span>Not set</span>
+              <span
+                className={cn(
+                  "px-1.5 py-0.5 rounded-full text-xs",
+                  selectedMode === "not-set"
+                    ? "bg-white/20"
+                    : "bg-muted-foreground/20",
+                )}
+              >
+                {tracks.filter((track) => !track.metadata?.key).length}
+              </span>
+            </Badge>
+
+            {MUSICAL_MODES.map((mode) => {
+              const count = tracks.filter((track) =>
+                track.metadata?.key?.includes(mode),
+              ).length;
+              if (count === 0) return null;
+              return (
+                <Badge
+                  key={mode}
+                  variant={selectedMode === mode ? "default" : "outline"}
+                  className={cn(
+                    "cursor-pointer flex items-center gap-2",
+                    selectedMode === mode
+                      ? "bg-orange-500 hover:bg-orange-600 text-white"
+                      : "hover:bg-muted",
+                  )}
+                  onClick={() =>
+                    setSelectedMode(selectedMode === mode ? null : mode)
+                  }
+                >
+                  <span>{mode}</span>
+                  <span
+                    className={cn(
+                      "px-1.5 py-0.5 rounded-full text-xs",
+                      selectedMode === mode
+                        ? "bg-white/20"
+                        : "bg-muted-foreground/20",
+                    )}
+                  >
+                    {count}
+                  </span>
+                </Badge>
+              );
+            })}
+          </div>
+        </CollapsibleContent>
+      </Collapsible>
+
       {/* Date Range */}
       <div className="space-y-2">
         <h3 className="text-sm font-medium">Upload Date</h3>
@@ -203,19 +529,131 @@ export function SearchFilters() {
             </PopoverContent>
           </Popover>
         </div>
-
-        {/* Clear Filters */}
-        {hasActiveFilters && (
-          <Button
-            variant="ghost"
-            className="w-full mt-2"
-            onClick={clearFilters}
-          >
-            <X className="mr-2 h-4 w-4" />
-            Clear Filters
-          </Button>
-        )}
       </div>
+
+      {/* Released Status */}
+      <Collapsible>
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-medium">Released?</h3>
+          <CollapsibleTrigger asChild>
+            <Button variant="ghost" size="sm" className="p-0 h-auto">
+              <ChevronDown className="h-4 w-4" />
+            </Button>
+          </CollapsibleTrigger>
+        </div>
+        <CollapsibleContent className="mt-2">
+          <div className="flex flex-wrap gap-2">
+            <Badge
+              variant={isReleased === true ? "default" : "outline"}
+              className={cn(
+                "cursor-pointer flex items-center gap-2",
+                isReleased === true
+                  ? "bg-orange-500 hover:bg-orange-600 text-white"
+                  : "hover:bg-muted",
+              )}
+              onClick={() => setIsReleased(isReleased === true ? null : true)}
+            >
+              <span>Released</span>
+              <span
+                className={cn(
+                  "px-1.5 py-0.5 rounded-full text-xs",
+                  isReleased === true
+                    ? "bg-white/20"
+                    : "bg-muted-foreground/20",
+                )}
+              >
+                {tracks.filter((track) => track.is_released).length}
+              </span>
+            </Badge>
+            <Badge
+              variant={isReleased === false ? "default" : "outline"}
+              className={cn(
+                "cursor-pointer flex items-center gap-2",
+                isReleased === false
+                  ? "bg-orange-500 hover:bg-orange-600 text-white"
+                  : "hover:bg-muted",
+              )}
+              onClick={() => setIsReleased(isReleased === false ? null : false)}
+            >
+              <span>Unreleased</span>
+              <span
+                className={cn(
+                  "px-1.5 py-0.5 rounded-full text-xs",
+                  isReleased === false
+                    ? "bg-white/20"
+                    : "bg-muted-foreground/20",
+                )}
+              >
+                {tracks.filter((track) => !track.is_released).length}
+              </span>
+            </Badge>
+          </div>
+        </CollapsibleContent>
+      </Collapsible>
+
+      {/* Remix Status */}
+      <Collapsible>
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-medium">Remix?</h3>
+          <CollapsibleTrigger asChild>
+            <Button variant="ghost" size="sm" className="p-0 h-auto">
+              <ChevronDown className="h-4 w-4" />
+            </Button>
+          </CollapsibleTrigger>
+        </div>
+        <CollapsibleContent className="mt-2">
+          <div className="flex flex-wrap gap-2">
+            <Badge
+              variant={isRemix === false ? "default" : "outline"}
+              className={cn(
+                "cursor-pointer flex items-center gap-2",
+                isRemix === false
+                  ? "bg-orange-500 hover:bg-orange-600 text-white"
+                  : "hover:bg-muted",
+              )}
+              onClick={() => setIsRemix(isRemix === false ? null : false)}
+            >
+              <span>Original</span>
+              <span
+                className={cn(
+                  "px-1.5 py-0.5 rounded-full text-xs",
+                  isRemix === false ? "bg-white/20" : "bg-muted-foreground/20",
+                )}
+              >
+                {tracks.filter((track) => !track.is_remix).length}
+              </span>
+            </Badge>
+            <Badge
+              variant={isRemix === true ? "default" : "outline"}
+              className={cn(
+                "cursor-pointer flex items-center gap-2",
+                isRemix === true
+                  ? "bg-orange-500 hover:bg-orange-600 text-white"
+                  : "hover:bg-muted",
+              )}
+              onClick={() => setIsRemix(isRemix === true ? null : true)}
+            >
+              <span>Remix</span>
+              <span
+                className={cn(
+                  "px-1.5 py-0.5 rounded-full text-xs",
+                  isRemix === true ? "bg-white/20" : "bg-muted-foreground/20",
+                )}
+              >
+                {tracks.filter((track) => track.is_remix).length}
+              </span>
+            </Badge>
+          </div>
+        </CollapsibleContent>
+      </Collapsible>
+
+      {/* Clear Filters */}
+      {hasActiveFilters && (
+        <Button variant="ghost" className="w-full mt-2" onClick={clearFilters}>
+          <X className="mr-2 h-4 w-4" />
+          Clear Filters
+        </Button>
+      )}
     </div>
   );
 }

@@ -8,18 +8,18 @@ import { Toaster } from "@/components/ui/toaster";
 
 function App() {
   return (
-    <ThemeProvider defaultTheme="dark" storageKey="soundwave-theme">
+    <Suspense fallback={<p>Loading...</p>}>
       <AuthProvider>
-        <SearchProvider>
-          <Suspense fallback={<p>Loading...</p>}>
+        <ThemeProvider defaultTheme="dark" storageKey="soundwave-theme">
+          <SearchProvider>
             <Routes>
               <Route path="/" element={<Home />} />
             </Routes>
-          </Suspense>
-        </SearchProvider>
-        <Toaster />
+            <Toaster />
+          </SearchProvider>
+        </ThemeProvider>
       </AuthProvider>
-    </ThemeProvider>
+    </Suspense>
   );
 }
 

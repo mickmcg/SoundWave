@@ -4,7 +4,6 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogDescription,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,7 +17,7 @@ interface AuthDialogProps {
   onOpenChange: (open: boolean) => void;
 }
 
-type AuthMode = "signin" | "signup" | "forgot-password";
+type AuthMode = "signin" | "forgot-password";
 
 export function AuthDialog({ open, onOpenChange }: AuthDialogProps) {
   const [mode, setMode] = useState<AuthMode>("signin");
@@ -27,7 +26,7 @@ export function AuthDialog({ open, onOpenChange }: AuthDialogProps) {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [loading, setLoading] = useState(false);
-  const { signIn, signUp, resetPassword } = useAuth();
+  const { signIn, resetPassword } = useAuth();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -36,16 +35,7 @@ export function AuthDialog({ open, onOpenChange }: AuthDialogProps) {
     setLoading(true);
 
     try {
-      if (mode === "signup") {
-        const { requiresEmailConfirmation } = await signUp(email, password);
-        if (requiresEmailConfirmation) {
-          setSuccess(
-            "Please check your email for the confirmation link to complete your registration.",
-          );
-        } else {
-          onOpenChange(false);
-        }
-      } else if (mode === "signin") {
+      if (mode === "signin") {
         await signIn(email, password);
         onOpenChange(false);
       } else if (mode === "forgot-password") {
@@ -73,21 +63,8 @@ export function AuthDialog({ open, onOpenChange }: AuthDialogProps) {
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>
-            {mode === "signin" && "Sign In"}
-            {mode === "signup" && "Create Account"}
-            {mode === "forgot-password" && "Reset Password"}
+            {mode === "signin" ? "Sign In" : "Reset Password"}
           </DialogTitle>
-          {mode === "signup" && (
-            <DialogDescription>
-              Create an account to upload and share your tracks.
-            </DialogDescription>
-          )}
-          {mode === "forgot-password" && (
-            <DialogDescription>
-              Enter your email address and we'll send you a link to reset your
-              password.
-            </DialogDescription>
-          )}
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -102,7 +79,7 @@ export function AuthDialog({ open, onOpenChange }: AuthDialogProps) {
             />
           </div>
 
-          {mode !== "forgot-password" && (
+          {mode === "signin" && (
             <div className="space-y-2">
               <Label htmlFor="password">Password</Label>
               <Input
@@ -131,34 +108,21 @@ export function AuthDialog({ open, onOpenChange }: AuthDialogProps) {
 
           <div className="flex flex-col gap-2">
             <Button type="submit" disabled={loading}>
-              {mode === "signin" && "Sign In"}
-              {mode === "signup" && "Sign Up"}
-              {mode === "forgot-password" && "Send Reset Link"}
+              {mode === "signin" ? "Sign In" : "Send Reset Link"}
             </Button>
 
             <div className="flex flex-col gap-1">
-              {mode === "signin" && (
-                <>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    onClick={() => switchMode("signup")}
-                    disabled={loading}
-                  >
-                    Don't have an account? Sign up
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="link"
-                    onClick={() => switchMode("forgot-password")}
-                    disabled={loading}
-                    className="text-orange-500 hover:text-orange-600"
-                  >
-                    Forgot your password?
-                  </Button>
-                </>
-              )}
-              {(mode === "signup" || mode === "forgot-password") && (
+              {mode === "signin" ? (
+                <Button
+                  type="button"
+                  variant="link"
+                  onClick={() => switchMode("forgot-password")}
+                  disabled={loading}
+                  className="text-orange-500 hover:text-orange-600"
+                >
+                  Forgot your password?
+                </Button>
+              ) : (
                 <Button
                   type="button"
                   variant="ghost"
