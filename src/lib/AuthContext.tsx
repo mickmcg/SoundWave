@@ -62,7 +62,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       email,
       password,
       options: {
-        emailRedirectTo: "https://xenodochial-merkle9-7r4lv.dev.tempolabs.ai",
+        emailRedirectTo: "https://serene-brown1-qhey7.dev.tempolabs.ai",
       },
     });
 
@@ -79,7 +79,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const resetPassword = async (email: string) => {
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: "https://xenodochial-merkle9-7r4lv.dev.tempolabs.ai",
+      redirectTo: "https://serene-brown1-qhey7.dev.tempolabs.ai",
     });
     if (error) throw error;
   };

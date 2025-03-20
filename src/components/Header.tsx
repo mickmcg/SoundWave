@@ -32,7 +32,13 @@ const Header = () => {
   return (
     <header className="w-full border-b px-6 py-4 bg-background">
       <div className="max-w-[1512px] mx-auto flex items-center justify-between gap-6">
-        <div className="text-orange-500 text-2xl font-bold">SoundWave</div>
+        <div className="flex items-center">
+          <img
+            src="/sondica-logo-160px-transparent.png"
+            alt="Sondica Music"
+            className="h-8"
+          />
+        </div>
 
         <div className="flex-1 max-w-xl">
           <div className="relative">
